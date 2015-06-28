@@ -1,0 +1,9 @@
+Language: Cpp
+IndentWidth: 8
+UseTab: ForIndentation
+ColumnLimit: 120
+AccessModifierOffset: -8
+AllowShortFunctionsOnASingleLine: true
+AllowShortIfStatementsOnASingleLine: true
+AllowShortLoopsOnASingleLine: true
+PointerBindsToType: true
