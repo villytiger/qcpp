@@ -40,32 +40,49 @@ struct FunctionTraits<R(Args...)> {
 };
 
 template<typename R, typename... Args>
-struct FunctionTraits<R(*)(Args...)> : public FunctionTraits<R(Args...)> {
+struct FunctionTraits<R(*)(Args...)>: public FunctionTraits<R(Args...)> {
 };
 
 template<typename C, typename R, typename... Args>
-struct FunctionTraits<R(C::*)(Args...)> : public FunctionTraits<R(Args...)> {
+struct FunctionTraits<R(C::*)(Args...)>: public FunctionTraits<R(Args...)> {
 	typedef C& OwnerType;
 };
 
 template<typename C, typename R, typename... Args>
-struct FunctionTraits<R(C::*)(Args...) const> : public FunctionTraits<R(Args...)> {
+struct FunctionTraits<R(C::*)(Args...) const>: public FunctionTraits<R(Args...)> {
 	typedef const C& OwnerType;
 };
 
 template<typename C, typename R, typename... Args>
-struct FunctionTraits<R(C::*)(Args...) volatile> : public FunctionTraits<R(Args...)> {
+struct FunctionTraits<R(C::*)(Args...) volatile>: public FunctionTraits<R(Args...)> {
 	typedef volatile C& OwnerType;
 };
 
 template<typename C, typename R, typename... Args>
-struct FunctionTraits<R(C::*)(Args...) const volatile> : public FunctionTraits<R(Args...)> {
+struct FunctionTraits<R(C::*)(Args...) const volatile>: public FunctionTraits<R(Args...)> {
 	typedef const volatile C& OwnerType;
 };
 
 template<typename FunctionType>
-struct FunctionTraits<std::function<FunctionType>> : public FunctionTraits<FunctionType> {
+struct FunctionTraits<std::function<FunctionType>>: public FunctionTraits<FunctionType> {
 };
+
+template <typename T>
+struct FunctionTraits<T&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<const T&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<volatile T&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<const volatile T&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<T&&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<const T&&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<volatile T&&>: public FunctionTraits<T> {};
+template <typename T>
+struct FunctionTraits<const volatile T&&>: public FunctionTraits<T> {};
 
 }
 }

@@ -89,7 +89,7 @@ template<typename T>
 QPromise<T> fulfill(T&&);
 
 template<typename R = void, typename U = void, typename E>
-QPromise<R, E> reject(E);
+QPromise<R, U> reject(E&&);
 
 }
 

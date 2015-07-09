@@ -37,13 +37,13 @@ class QDeferred;
 namespace priv {
 
 template<typename R>
-auto makePropagation() {
+constexpr auto makePropagation() noexcept {
 	return [](const R& r) {return r;};
 }
 
 template<> inline
-auto makePropagation<void>() {
-	return nullptr;
+auto makePropagation<void>() noexcept {
+	return [](){};
 }
 
 template<typename F, typename>
@@ -51,36 +51,48 @@ struct FulfillFunction {
 	typedef F Type;
 	typedef typename FunctionTraits<Type>::ReturnType ReturnType;
 
-	// TODO: check overhead
 	template<typename T>
-	static Type cast(T&& v) {
-		return v;
+	static constexpr auto cast(T&& v) noexcept {
+		return std::forward<T>(v);
 	}
 };
 
 template<typename R>
-struct FulfillFunction<nullptr_t, R> {
+struct FulfillFunction<std::nullptr_t, R> {
 	typedef decltype(makePropagation<R>()) Type;
 	typedef typename FunctionTraits<Type>::ReturnType ReturnType;
 
-	// TODO: check overhead
-	template<typename T>
-	static Type cast(nullptr_t) {
+	static constexpr auto cast(std::nullptr_t&) noexcept {
 		return makePropagation<R>();
 	}
 };
+
+/*template<>
+struct FulfillFunction<std::nullptr_t, void> {
+	typedef std::nullptr_t Type;
+	typedef void ReturnType;
+
+	static constexpr auto cast(std::nullptr_t) noexcept {
+		return nullptr;
+	}
+};*/
+
+template<typename F, typename R>
+struct FulfillFunction<F&, R>: public FulfillFunction<F, R> {};
 
 template<typename F, typename... R>
 struct ResultOf {
 	typedef decltype(std::declval<F>()(std::declval<R>()...)) Type;
 };
 
-template<typename F>
+
+
+/*template<typename F>
 struct ResultOf<F, void> {
 	typedef decltype(std::declval<F>()()) Type;
 };
 
-/*template<typename... R>
+template<typename... R>
 struct ResultOf<std::nullptr_t, R...> {
 	typedef void Type;
 };
@@ -193,27 +205,27 @@ class Detail: public DetailReasonHolder<R> {
 	void addChild(Detail<R, U>*);
 
 	template<typename F>
-	typename std::enable_if<std::is_same<typename ResultOf<F, R>::Type, void>::value
+	typename std::enable_if<std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
 	                        && std::is_same<R, void>::value,
-                                QPromise<typename ResultOf<F, R>::Type>>::type
+                                QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 	fulfill(F&&);
 
 	template<typename F>
-	typename std::enable_if<!std::is_same<typename ResultOf<F, R>::Type, void>::value
+	typename std::enable_if<!std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
 	                        && std::is_same<R, void>::value,
-                                QPromise<typename ResultOf<F, R>::Type>>::type
+                                QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 	fulfill(F&&);
 
 	template<typename F>
-	typename std::enable_if<std::is_same<typename ResultOf<F, R>::Type, void>::value
+	typename std::enable_if<std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
 	                        && !std::is_same<R, void>::value,
-                                QPromise<typename ResultOf<F, R>::Type>>::type
+                                QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 	fulfill(F&&);
 
 	template<typename F>
-	typename std::enable_if<!std::is_same<typename ResultOf<F, R>::Type, void>::value
+	typename std::enable_if<!std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
 	                        && !std::is_same<R, void>::value,
-	                        QPromise<typename ResultOf<F, R>::Type>>::type
+	                        QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 	fulfill(F&&);
 
 public:
@@ -221,7 +233,7 @@ public:
 	Detail(Detail&&);
 
 	template<typename F1, typename F2, typename F3>
-	QPromise<typename priv::ResultOf<F1, R>::Type>
+	QPromise<typename FulfillFunction<F1, R>::ReturnType>
 	then(F1&& onFulfilled, F2&& onRejected, F3&& onProgress);
 
 	QPromise<R, U> promise();

@@ -58,8 +58,8 @@ TEST(QspecPropagation, ResolutionIsForwardedThroughDeferredPromise) {
 	EXPECT_TRUE(t);
 }
 
-/*TEST(QspecPropagation, ErrbackRecoversFromException) {
-	//bool t = false;
+TEST(QspecPropagation, ErrbackRecoversFromException) {
+	bool t = false;
 	std::runtime_error error("some error");
 	reject<int>(error).then(nullptr, [](const std::exception&) {
 		return 10;
@@ -74,7 +74,7 @@ TEST(QspecPropagation, ResolutionIsForwardedThroughDeferredPromise) {
 		t = true;
 	});
 	EXPECT_TRUE(t);
-}*/
+}
 
 /*TEST(QspecPropagation, ResolutionIsForwardedThroughDeferredPromise) {
 	QDeferred<int> a;

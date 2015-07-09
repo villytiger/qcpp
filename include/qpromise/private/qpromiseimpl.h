@@ -44,8 +44,8 @@ template<typename R, typename U>
 template<typename F1, typename F2, typename F3>
 QPromise<typename priv::FulfillFunction<F1, R>::ReturnType>
 QPromise<R, U>::then(F1&& onFulfilled, F2&& onRejected, F3&& onProgress) {
-	return d->then(std::forward<F1>(onFulfilled), std::forward<F2>(onRejected),
-		       std::forward<F3>(onProgress));
+	return d->then(priv::FulfillFunction<F1, R>::cast(onFulfilled),
+		       std::forward<F2>(onRejected), std::forward<F3>(onProgress));
 }
 
 template<typename R, typename U>
@@ -126,6 +126,13 @@ QPromise<T> fulfill(T&& v) {
 	return d.promise();
 }
 
+template<typename R, typename U, typename E> inline
+QPromise<R, U> reject(E&& e) {
+	QDeferred<R, U> d;
+	d.reject(std::forward<E>(e));
+	return d.promise();
+}
+
 namespace priv {
 
 template<typename R, typename U>
@@ -150,9 +157,9 @@ void Detail<R, U>::addChild(Detail<R, U>* child) {
 
 template<typename R, typename U>
 template<typename F>
-typename std::enable_if<std::is_same<typename ResultOf<F, R>::Type, void>::value
+typename std::enable_if<std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && std::is_same<R, void>::value,
-                        QPromise<typename ResultOf<F, R>::Type>>::type
+QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	f();
 	return ::qpromise::fulfill();
@@ -160,18 +167,18 @@ Detail<R, U>::fulfill(F&& f) {
 
 template<typename R, typename U>
 template<typename F>
-typename std::enable_if<!std::is_same<typename ResultOf<F, R>::Type, void>::value
+typename std::enable_if<!std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && std::is_same<R, void>::value,
-                        QPromise<typename ResultOf<F, R>::Type>>::type
+QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	return ::qpromise::fulfill(f());
 }
 
 template<typename R, typename U>
 template<typename F>
-typename std::enable_if<std::is_same<typename ResultOf<F, R>::Type, void>::value
+typename std::enable_if<std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && !std::is_same<R, void>::value,
-                        QPromise<typename ResultOf<F, R>::Type>>::type
+QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	f(*(this->mReason));
 	return ::qpromise::fulfill();
@@ -179,23 +186,25 @@ Detail<R, U>::fulfill(F&& f) {
 
 template<typename R, typename U>
 template<typename F>
-typename std::enable_if<!std::is_same<typename ResultOf<F, R>::Type, void>::value
+typename std::enable_if<!std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && !std::is_same<R, void>::value,
-                        QPromise<typename ResultOf<F, R>::Type>>::type
+QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	return ::qpromise::fulfill(f(*(this->mReason)));
 }
 
 template<typename R, typename U>
 template<typename F1, typename F2, typename F3>
-QPromise<typename priv::ResultOf<F1, R>::Type>
+QPromise<typename FulfillFunction<F1, R>::ReturnType>
 Detail<R, U>::then(F1&& onFulfilled, F2&& onRejected, F3&& onProgress) {
 	if (mState.isFulfilled) {
 		return fulfill(onFulfilled);
+	} else if (mState.isRejected) {
+		return ::qpromise::fulfill(onRejected(*mException));
 	} else {
-		auto c = new Chain<R, U, typename priv::ResultOf<F1, R>::Type>(std::forward<F1>(onFulfilled),
-									       std::forward<F2>(onRejected),
-									       std::forward<F3>(onProgress));
+		auto c = new Chain<R, U, typename FulfillFunction<F1, R>::ReturnType>(std::forward<F1>(onFulfilled),
+										      std::forward<F2>(onRejected),
+										      std::forward<F3>(onProgress));
 		if (mChain) mChain->mNext.reset(c);
 		else mChain.reset(c);
 		return c->promise();
@@ -232,6 +241,8 @@ Detail<R, U>::resolve(T&& v) {
 
 template<typename R, typename U>
 void Detail<R, U>::reject(const std::exception& e) {
+	mState.isRejected = true;
+	this->mException.reset(new std::exception(e));
 	if (mChain) mChain->reject(e);
 }
 
