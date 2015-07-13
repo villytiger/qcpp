@@ -44,8 +44,9 @@ template<typename R, typename U>
 template<typename F1, typename F2, typename F3>
 QPromise<typename priv::FulfillFunction<F1, R>::ReturnType>
 QPromise<R, U>::then(F1&& onFulfilled, F2&& onRejected, F3&& onProgress) {
-	return d->then(priv::FulfillFunction<F1, R>::cast(onFulfilled),
-		       std::forward<F2>(onRejected), std::forward<F3>(onProgress));
+	return d->then(priv::FulfillFunction<F1, R>::wrap(onFulfilled),
+		       priv::RejectFunction<F2, R>::wrap(onRejected),
+		       std::forward<F3>(onProgress));
 }
 
 template<typename R, typename U>
@@ -97,8 +98,9 @@ QDeferred<R, U>::resolve(T&& v) {
 }
 
 template<typename R, typename U>
-void QDeferred<R, U>::reject(const std::exception& e) {
-	d->reject(e);
+template<typename E>
+void QDeferred<R, U>::reject(E&& e) {
+	d->reject(std::forward<E>(e));
 }
 
 template<typename R, typename U>
@@ -145,7 +147,7 @@ Detail<R, U>::Detail(Detail&& o)
 	: DetailReasonHolder<R>(std::move(o))
 	, mState(std::move(o.mState))
 	, mChain(std::move(o.mChain))
-	, mException(std::move(o.mException)) {
+	, mExceptionPtr(std::move(o.mExceptionPtr)) {
 }
 
 template<typename R, typename U>
@@ -159,7 +161,7 @@ template<typename R, typename U>
 template<typename F>
 typename std::enable_if<std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && std::is_same<R, void>::value,
-QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
+                        QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	f();
 	return ::qpromise::fulfill();
@@ -169,7 +171,7 @@ template<typename R, typename U>
 template<typename F>
 typename std::enable_if<!std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && std::is_same<R, void>::value,
-QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
+                        QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	return ::qpromise::fulfill(f());
 }
@@ -178,7 +180,7 @@ template<typename R, typename U>
 template<typename F>
 typename std::enable_if<std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && !std::is_same<R, void>::value,
-QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
+                        QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	f(*(this->mReason));
 	return ::qpromise::fulfill();
@@ -188,10 +190,35 @@ template<typename R, typename U>
 template<typename F>
 typename std::enable_if<!std::is_same<typename FulfillFunction<F, R>::ReturnType, void>::value
                         && !std::is_same<R, void>::value,
-QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
+                        QPromise<typename FulfillFunction<F, R>::ReturnType>>::type
 Detail<R, U>::fulfill(F&& f) {
 	return ::qpromise::fulfill(f(*(this->mReason)));
 }
+
+template<typename R>
+struct RejectAction {
+	template<typename F, typename E>
+	static QPromise<R> reject(F&& f, E&& e) noexcept {
+		try {
+			return ::qpromise::fulfill(f(std::forward<E>(e)));
+		} catch (std::exception& e2) {
+			return ::qpromise::reject<R>(e2);
+		}
+	}
+};
+
+template<>
+struct RejectAction<void> {
+	template<typename F, typename E>
+	static QPromise<> reject(F&& f, E&& e) noexcept {
+		try {
+			f(std::forward<E>(e));
+			return ::qpromise::fulfill();
+		} catch (std::exception& e2) {
+			return ::qpromise::reject<>(e2);
+		}
+	}
+};
 
 template<typename R, typename U>
 template<typename F1, typename F2, typename F3>
@@ -200,7 +227,7 @@ Detail<R, U>::then(F1&& onFulfilled, F2&& onRejected, F3&& onProgress) {
 	if (mState.isFulfilled) {
 		return fulfill(onFulfilled);
 	} else if (mState.isRejected) {
-		return ::qpromise::fulfill(onRejected(*mException));
+		return RejectAction<typename FulfillFunction<F1, R>::ReturnType>::reject(onRejected, mExceptionPtr);
 	} else {
 		auto c = new Chain<R, U, typename FulfillFunction<F1, R>::ReturnType>(std::forward<F1>(onFulfilled),
 										      std::forward<F2>(onRejected),
@@ -240,10 +267,11 @@ Detail<R, U>::resolve(T&& v) {
 }
 
 template<typename R, typename U>
-void Detail<R, U>::reject(const std::exception& e) {
+template<typename E>
+void Detail<R, U>::reject(E&& e) {
 	mState.isRejected = true;
-	this->mException.reset(new std::exception(e));
-	if (mChain) mChain->reject(e);
+	mExceptionPtr = std::make_exception_ptr(e);
+	for (auto c = mChain.get(); c != nullptr; c = c->mNext.get()) c->reject(mExceptionPtr);
 }
 
 template<typename R, typename U>
@@ -261,9 +289,9 @@ Detail<R, U>::notify(const T& v) {
 template<typename R, typename U, typename R2>
 template<typename F1, typename F2, typename F3>
 Chain<R, U, R2>::Chain(F1&& onFulfilled, F2&& onRejected, F3&& onProgress) {
-	this->mOnFulfilled = std::forward<typename CallbackFunc<R2, R>::Type>(onFulfilled);
-	this->mOnRejected = std::forward<std::function<void (const std::exception&)>>(onRejected);
-	this->mOnProgress = std::forward<typename CallbackFunc<void, U>::Type>(onProgress);
+	this->mOnFulfilled = std::forward<F1>(onFulfilled);
+	this->mOnRejected = std::forward<F2>(onRejected);
+	this->mOnProgress = std::forward<F3>(onProgress);
 }
 
 template<typename R, typename U, typename R2>
@@ -272,7 +300,7 @@ QPromise<R2> Chain<R, U, R2>::promise() {
 }
 
 template<typename R, typename U, typename R2>
-void Chain<R, U, R2>::reject(const std::exception& e) {
+void Chain<R, U, R2>::reject(std::exception_ptr e) {
 	if (this->mOnRejected) {
 		try {
 			this->mOnRejected(e);
@@ -356,7 +384,7 @@ void ChildResolveChain<void, U>::resolve() {
 }
 
 template<typename R, typename U>
-void ChildChain<R, U>::reject(const std::exception& e) {
+void ChildChain<R, U>::reject(std::exception_ptr e) {
 	this->mChild->reject(e);
 }
 

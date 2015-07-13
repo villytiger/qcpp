@@ -52,7 +52,7 @@ struct FulfillFunction {
 	typedef typename FunctionTraits<Type>::ReturnType ReturnType;
 
 	template<typename T>
-	static constexpr auto cast(T&& v) noexcept {
+	static constexpr auto wrap(T&& v) noexcept {
 		return std::forward<T>(v);
 	}
 };
@@ -62,8 +62,25 @@ struct FulfillFunction<std::nullptr_t, R> {
 	typedef decltype(makePropagation<R>()) Type;
 	typedef typename FunctionTraits<Type>::ReturnType ReturnType;
 
-	static constexpr auto cast(std::nullptr_t&) noexcept {
+	static constexpr auto wrap(std::nullptr_t&) noexcept {
 		return makePropagation<R>();
+	}
+};
+
+template<typename F, typename>
+struct RejectFunction {
+	template<typename T>
+	static constexpr auto wrap(T&& v) noexcept {
+		return std::forward<T>(v);
+	}
+};
+
+template<typename R>
+struct RejectFunction<std::nullptr_t, R> {
+	static constexpr auto wrap(std::nullptr_t&) noexcept {
+		return [](std::exception_ptr e) -> R {
+			std::rethrow_exception(e);
+		};
 	}
 };
 
@@ -170,7 +187,7 @@ public:
 
 	ChainBase() {}
 	virtual ~ChainBase() {}
-	virtual void reject(const std::exception&) = 0;
+	virtual void reject(std::exception_ptr) = 0;
 };
 
 template<typename R>
@@ -200,7 +217,7 @@ class Detail: public DetailReasonHolder<R> {
 	} mState;
 
 	std::unique_ptr<ChainBase<R, U>> mChain;
-	std::unique_ptr<std::exception> mException;
+	std::exception_ptr mExceptionPtr;
 
 	void addChild(Detail<R, U>*);
 
@@ -248,7 +265,8 @@ public:
 	typename std::enable_if<std::is_same<QPromise<R, U>, T>::value, void>::type
 	resolve(T&&);
 
-	void reject(const std::exception&);
+	template<typename E>
+	void reject(E&&);
 
 	void notify();
 
@@ -262,7 +280,7 @@ class ChainImpl: public ChainBase<R, U> {
 protected:
 	Detail<R2> mDetail;
 	typename CallbackFunc<R2, R>::Type mOnFulfilled;
-	std::function<void (const std::exception&)> mOnRejected;
+	std::function<void (std::exception_ptr)> mOnRejected;
 	typename CallbackFunc<void, U>::Type mOnProgress;
 };
 
@@ -310,7 +328,7 @@ public:
 
 	QPromise<R2> promise();
 
-	void reject(const std::exception&);
+	void reject(std::exception_ptr);
 };
 
 template<typename R, typename U>
@@ -349,7 +367,7 @@ public:
 	ChildChain(Detail<R, U>*);
 	~ChildChain();
 
-	void reject(const std::exception&);
+	void reject(std::exception_ptr);
 };
 
 template<typename T>

@@ -74,7 +74,8 @@ public:
 	typename std::enable_if<std::is_same<QPromise<R, U>, T>::value, void>::type
 	resolve(T&&);
 
-	void reject(const std::exception&);
+	template<typename E>
+	void reject(E&&);
 
 	void notify();
 
