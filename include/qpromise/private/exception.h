@@ -30,16 +30,26 @@ protected:
 	std::unique_ptr<std::exception> mException;
 
 public:
-	template<typename E, typename = std::enable_if<std::is_base_of<std::exception, E>, E>::type>
-	explicit ExceptionPtr(E&& e) {
-
+	template<typename E>
+	void set(E&& e) {
+		mClone = [](const std::exception& e) {return std::make_unique<E>(e);};
+		mException = std::make_unique(std::forward<E>(e));
 	}
 
-	ExceptionPtr& ExceptionPtr(const ExceptionPtr& e)
+/*	ExceptionPtr& ExceptionPtr(const ExceptionPtr& e)
 		: mClone(e.mClone)
-		, mException(mClone(e.*mException) {
+		, mException(e.mClone(e.*mException) {
+		return this;
+		}*/
+
+	std::exception& operator*() {
+		return *mException;
 	}
-}
+
+	const std::exception& operator*() const {
+		return *mException;
+	}
+};
 
 }
 }

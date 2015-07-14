@@ -18,6 +18,7 @@
 #ifndef QPRIVATE_PROMISE_H
 #define QPRIVATE_PROMISE_H
 
+#include "exception.h"
 #include "traits.h"
 
 #include <cstddef>
@@ -78,8 +79,8 @@ struct RejectFunction {
 template<typename R>
 struct RejectFunction<std::nullptr_t, R> {
 	static constexpr auto wrap(std::nullptr_t&) noexcept {
-		return [](std::exception_ptr e) -> R {
-			std::rethrow_exception(e);
+		return [](const std::exception& e) -> R {
+			throw e;
 		};
 	}
 };
@@ -187,7 +188,7 @@ public:
 
 	ChainBase() {}
 	virtual ~ChainBase() {}
-	virtual void reject(std::exception_ptr) = 0;
+	virtual void reject(const ExceptionPtr&) = 0;
 };
 
 template<typename R>
@@ -217,7 +218,7 @@ class Detail: public DetailReasonHolder<R> {
 	} mState;
 
 	std::unique_ptr<ChainBase<R, U>> mChain;
-	std::exception_ptr mExceptionPtr;
+	ExceptionPtr mExceptionPtr;
 
 	void addChild(Detail<R, U>*);
 
@@ -280,7 +281,7 @@ class ChainImpl: public ChainBase<R, U> {
 protected:
 	Detail<R2> mDetail;
 	typename CallbackFunc<R2, R>::Type mOnFulfilled;
-	std::function<void (std::exception_ptr)> mOnRejected;
+	std::function<void (const std::exception&)> mOnRejected;
 	typename CallbackFunc<void, U>::Type mOnProgress;
 };
 
@@ -328,7 +329,7 @@ public:
 
 	QPromise<R2> promise();
 
-	void reject(std::exception_ptr);
+	void reject(const ExceptionPtr&);
 };
 
 template<typename R, typename U>
@@ -367,7 +368,7 @@ public:
 	ChildChain(Detail<R, U>*);
 	~ChildChain();
 
-	void reject(std::exception_ptr);
+	void reject(const ExceptionPtr&);
 };
 
 template<typename T>

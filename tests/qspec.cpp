@@ -61,7 +61,7 @@ TEST(QspecPropagation, ResolutionIsForwardedThroughDeferredPromise) {
 TEST(QspecPropagation, ErrbackRecoversFromException) {
 	bool t = false;
 	std::runtime_error error("some error");
-	reject<int>(error).then(nullptr, [&error](std::exception_ptr e) {
+	reject<int>(error).then(nullptr, [&error](const std::exception& e) {
 		EXPECT_TRUE(typeid(error) == typeid(e));
 		EXPECT_EQ(error.what(), e.what());
 		return 10;
@@ -76,7 +76,7 @@ TEST(QspecPropagation, ErrbackRecoversFromException) {
 TEST(QspecPropagation, RejectionPropagatesThroughThenWithNoErrback) {
 	bool t = false;
 	std::runtime_error error("some error");
-	reject(error).then().then(nullptr, [&t, &error](std::exception_ptr e) {
+	reject(error).then().then(nullptr, [&t, &error](const std::exception& e) {
 		EXPECT_TRUE(typeid(error) == typeid(e));
 		EXPECT_EQ(error.what(), e.what());
 		EXPECT_FALSE(t);

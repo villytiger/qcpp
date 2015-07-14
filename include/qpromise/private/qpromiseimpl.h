@@ -227,7 +227,7 @@ Detail<R, U>::then(F1&& onFulfilled, F2&& onRejected, F3&& onProgress) {
 	if (mState.isFulfilled) {
 		return fulfill(onFulfilled);
 	} else if (mState.isRejected) {
-		return RejectAction<typename FulfillFunction<F1, R>::ReturnType>::reject(onRejected, mExceptionPtr);
+		return RejectAction<typename FulfillFunction<F1, R>::ReturnType>::reject(onRejected, *mExceptionPtr);
 	} else {
 		auto c = new Chain<R, U, typename FulfillFunction<F1, R>::ReturnType>(std::forward<F1>(onFulfilled),
 										      std::forward<F2>(onRejected),
@@ -270,8 +270,8 @@ template<typename R, typename U>
 template<typename E>
 void Detail<R, U>::reject(E&& e) {
 	mState.isRejected = true;
-	mExceptionPtr = std::make_exception_ptr(e);
-	for (auto c = mChain.get(); c != nullptr; c = c->mNext.get()) c->reject(mExceptionPtr);
+	mExceptionPtr.set(std::forward<E>(e));
+	for (auto c = mChain.get(); c != nullptr; c = c->mNext.get()) c->reject(*mExceptionPtr);
 }
 
 template<typename R, typename U>
@@ -300,10 +300,10 @@ QPromise<R2> Chain<R, U, R2>::promise() {
 }
 
 template<typename R, typename U, typename R2>
-void Chain<R, U, R2>::reject(std::exception_ptr e) {
+void Chain<R, U, R2>::reject(const ExceptionPtr& e) {
 	if (this->mOnRejected) {
 		try {
-			this->mOnRejected(e);
+			this->mOnRejected(*e);
 		} catch (const std::exception& e2) {
 			this->mDetail.reject(e2);
 		}
@@ -384,8 +384,8 @@ void ChildResolveChain<void, U>::resolve() {
 }
 
 template<typename R, typename U>
-void ChildChain<R, U>::reject(std::exception_ptr e) {
-	this->mChild->reject(e);
+void ChildChain<R, U>::reject(const ExceptionPtr& e) {
+	this->mChild->reject(*e);
 }
 
 template<typename R, typename U>
