@@ -19,62 +19,28 @@
 
 namespace qpromise {
 
-QPromise QPromiseBase::then(const std::function<QVariant(const QVariant&)>& fulfilled,
-			    const std::function<QVariant(const QException&)>& rejected) {
+QPromise QPromiseBase::then(const std::function<QVariant(const QVariant&)>& fulfilled) {
 	auto deferred = Q::defer();
 
-	auto onFulfilled = [fulfilled](const QVariant& value) {
-		if (fulfilled) {
-			return fulfilled(value);
-		} else {
-			return value;
-		}
-	};
-
-	auto onRejected = [rejected](const QException& exception) {
-		return rejected(exception);
-	};
-
-	Q::nextTick([ thisPtr = sharedFromThis(), deferred, onFulfilled, onRejected ]() mutable {
-		std::function<QVariant(QException&)> arg0 = [deferred, onRejected](const QException& exception) mutable {
-			deferred.resolve(onRejected(exception));
-		};
-		thisPtr->promiseDispatch([deferred, onFulfilled](const QVariant& value) mutable {
-			deferred.resolve(onFulfilled(value));
-			}, "when", Q_ARG(decltype(arg0), arg0));
-	});
+	mQueue.push_back(
+	    [deferred, fulfilled](const QVariant& value) mutable { return deferred.resolve(fulfilled(value)); });
 
 	return deferred.promise();
 }
 
-void QResolvedPromise::doPromiseDispatch(const std::function<void(const QVariant&)>& f, const char* op,
-					 const QVector<QGenericArgument>& args) {
-	QVariant r;
-
-	switch (args.size()) {
-	case 0: r = mDescriptor->invoke(op); break;
-	case 1: r = mDescriptor->invoke(op, args[0]); break;
-	default: Q_ASSERT(!"ololo");
-	}
-
-	f(r);
+void QPromiseBase::then(const QSharedPointer<QPromiseBase>& promise) {
+	mQueue.push_back([promise](const QVariant& value) mutable { promise->resolve(value); });
 }
 
-void QDeferredPromise::become(const QSharedPointer<QPromiseBase>& resolvedPromise) {
-	mResolvedPromise = resolvedPromise;
+void QPromiseBase::resolve(const QVariant& value) {
+	Q::nextTick([this, value]() {
+		for (const auto& f : mQueue) f(value);
+	});
 }
 
-void QDeferredPromise::doPromiseDispatch(const std::function<void(const QVariant&)>& f, const char* op,
-					 const QVector<QGenericArgument>& args) {
-	mResolvedPromise->doPromiseDispatch(f, op, args);
-}
+void QPromiseBase::resolve(const QPromiseBase& promise) { promise.then(sharedFromThis()); }
 
-void QDeferred::become(const QPromise& v) { mPromise->become(v.mPromise); }
+void QDeferred::resolve(const QVariant& value) { mPromise->resolve(value); }
 
-void QDeferred::resolve(const QVariant& value) { become(Q::resolve(value)); }
-
-void QDeferred::resolve(const QPromise& promise) { become(promise); }
-
-void QDeferred::reject(const QException& reason) { become(Q::reject(reason)); }
-
+void QDeferred::resolve(const QPromise& promise) { mPromise->resolve(*(promise.mPromise)); }
 }

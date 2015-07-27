@@ -36,98 +36,17 @@ namespace qpromise {
 
 class QPromise;
 
-class QInvokable {
-protected:
-	virtual const QMetaObject* metaObject() const = 0;
-
-public:
-	virtual ~QInvokable() = default;
-	// virtual QInvokable* clone() const = 0;
-
-	template <typename... T> QVariant invoke(const char* member, T... args) {
-		QVarLengthArray<char, 512> sig;
-		int len = qstrlen(member);
-		if (len <= 0) return QVariant();
-		sig.append(member, len);
-		sig.append('(');
-
-		const char* typeNames[] = {args.name()...};
-
-		int paramCount;
-		for (paramCount = 0; paramCount != sizeof...(args); ++paramCount) {
-			len = qstrlen(typeNames[paramCount]);
-			sig.append(typeNames[paramCount], len);
-			sig.append(',');
-		}
-		if (paramCount == 0)
-			sig.append(')'); // no parameters
-		else
-			sig[sig.size() - 1] = ')';
-		sig.append('\0');
-
-		const QMetaObject* meta = metaObject();
-		int idx = meta->indexOfMethod(sig.constData());
-		if (idx < 0) {
-			QByteArray norm = QMetaObject::normalizedSignature(sig.constData());
-			idx = meta->indexOfMethod(norm.constData());
-		}
-
-		if (idx < 0 || idx >= meta->methodCount()) {
-			return QVariant();
-		}
-		QMetaMethod method = meta->method(idx);
-
-		QVariant r;
-		method.invokeOnGadget(this, Q_RETURN_ARG(QVariant, r), args...);
-		return r;
-	}
-};
-
 class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
-public:
-	enum State { PendingState, ResolvedState, RejectedState };
+	QVector<std::function<void(const QVariant&)>> mQueue;
 
 public:
-	virtual ~QPromiseBase() = default;
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled);
 
-	virtual void doPromiseDispatch(const std::function<void(const QVariant&)>& f, const char* op,
-	                               const QVector<QGenericArgument>& args) = 0;
+	void then(const QSharedPointer<QPromiseBase>& promise);
 
-	template<typename... T>
-	void promiseDispatch(const std::function<void(const QVariant&)>& f, const char* op, T... args) {
-		doPromiseDispatch(f, op, QVector<QGenericArgument>{args...});
-	}
+	void resolve(const QVariant& value);
 
-	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
-	              const std::function<QVariant(const QException&)>& rejected);
-};
-
-class QResolvedPromise : public QPromiseBase {
-	QScopedPointer<QInvokable> mDescriptor;
-	State mState;
-
-public:
-	QResolvedPromise(QResolvedPromise&& o) : mState(o.mState) { mDescriptor.swap(o.mDescriptor); }
-
-	template <typename T>
-	QResolvedPromise(T&& descriptor, State state)
-	    : mDescriptor(new typename std::remove_reference<T>::type(std::forward<T>(descriptor))), mState(state) {}
-
-protected:
-	void doPromiseDispatch(const std::function<void(const QVariant&)>& f, const char* op,
-	                       const QVector<QGenericArgument>& args) override;
-};
-
-class QDeferredPromise : public QPromiseBase {
-	friend class QDeferred;
-
-	QSharedPointer<QPromiseBase> mResolvedPromise;
-
-	void become(const QSharedPointer<QPromiseBase>& resolvedPromise);
-
-protected:
-	void doPromiseDispatch(const std::function<void(const QVariant&)>& f, const char* op,
-	                       const QVector<QGenericArgument>& args) override;
+	void resolve(QPromiseBase& promise);
 };
 
 template <typename T> T qvariantCast(const QVariant& v);
@@ -143,110 +62,45 @@ class QPromise {
 	QPromise(const QSharedPointer<QPromiseBase>& promise) : mPromise(promise) {}
 
 public:
-	template <typename T>
-	QPromise(T&& descriptor, QPromiseBase::State state)
-	    : mPromise(new QResolvedPromise(std::forward<T>(descriptor), state)) {}
-
 	template <typename F = std::nullptr_t, typename E = std::nullptr_t,
-		std::enable_if_t<!std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
-		std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* = nullptr>
-	QPromise then(F&& fulfilled = nullptr, E&& rejected = nullptr) {
-		return mPromise->then(std::forward<F>(fulfilled), std::forward<E>(rejected));
+	          std::enable_if_t<
+	              !std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
+	              std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* = nullptr>
+	QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
+		return mPromise->then(std::forward<F>(fulfilled));
 	}
 
-	template <typename F, typename E = std::nullptr_t,
-		std::enable_if_t<!std::is_same<std::nullptr_t, F>::value &&
-		                 std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
-	                         std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* = nullptr>
-	QPromise then(F&& fulfilled = nullptr, E&& rejected = nullptr) {
-		(void)rejected;
+	template <
+	    typename F, typename E = std::nullptr_t,
+	    std::enable_if_t<
+	        !std::is_same<std::nullptr_t, F>::value && std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
+	        std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* = nullptr>
+	QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
 		return mPromise->then([fulfilled](const QVariant& v) {
 			fulfilled(v);
 			return QVariant();
-		}, std::forward<E>(rejected));
+		});
 	}
 
 	template <typename F, typename E = std::nullptr_t,
-	          typename T = std::enable_if_t<!std::is_same<std::nullptr_t, F>::value &&
-	                                        !std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value,
-		typename FulfillTraits<F>::template Arg<0>::DecayType>>
-	QPromise then(F&& fulfilled = nullptr, E&& rejected = nullptr) {
-		(void)rejected;
-		return then([fulfilled](const QVariant& v) { return fulfilled(qvariantCast<T>(v)); },
-		            std::forward<E>(rejected));
+	          typename T = std::enable_if_t<
+	              !std::is_same<std::nullptr_t, F>::value &&
+	                  !std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value,
+	              typename FulfillTraits<F>::template Arg<0>::DecayType>>
+	QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
+		return then([fulfilled](const QVariant& v) { return fulfilled(qvariantCast<T>(v)); });
 	}
 };
 
-template <>
-struct QPromise::FulfillTraits<std::nullptr_t>: public priv::FunctionTraits<QVariant(const QVariant&)> {};
-
-class QFulfilledDescriptor : public QInvokable {
-	Q_GADGET
-
-	QVariant mValue;
-
-protected:
-	const QMetaObject* metaObject() const override { return &staticMetaObject; }
-
-public:
-	QFulfilledDescriptor(const QFulfilledDescriptor&) = default;
-	QFulfilledDescriptor(QFulfilledDescriptor&&) = default;
-
-	explicit QFulfilledDescriptor(const QVariant& v) : mValue(v) {}
-
-	Q_INVOKABLE QVariant when(const std::function<QVariant(QException&)>&) { return mValue; }
-};
-
-template <typename T>
-class QWrappedException : public QException {
-	T mException;
-
-public:
-	QWrappedException() = default;
-
-	QWrappedException(T&& exception) : mException(std::forward<T>(exception)) {}
-
-	const char* what() const noexcept override {
-		return mException.what();
-	}
-
-	constexpr const T& wrapped() const noexcept {
-		return mException;
-	}
-};
-
-template <typename T>
-constexpr auto wrapException(T&& exception) {
-	return QWrappedException<T>(std::forward<T>(exception));
-}
-
-class QRejectedDescriptor : public QInvokable {
-	Q_GADGET
-
-	QScopedPointer<QException> mReason;
-
-protected:
-	const QMetaObject* metaObject() const override { return &staticMetaObject; }
-
-public:
-	QRejectedDescriptor(QRejectedDescriptor&&) = default;
-
-	QRejectedDescriptor(const QRejectedDescriptor& o) : mReason(o.mReason->clone()) {}
-
-	explicit QRejectedDescriptor(const QException& reason) : mReason(reason.clone()) {}
-
-	Q_INVOKABLE QVariant when(const std::function<QVariant(QException&)>& rejected) { return rejected(*mReason); }
-};
+template <> struct QPromise::FulfillTraits<std::nullptr_t> : public priv::FunctionTraits<QVariant(const QVariant&)> {};
 
 class QDeferred {
 	Q_GADGET
 
-	QSharedPointer<QDeferredPromise> mPromise;
-
-	void become(const QPromise& v);
+	QSharedPointer<QPromiseBase> mPromise;
 
 public:
-	QDeferred() : mPromise(new QDeferredPromise()) {}
+	QDeferred() : mPromise(new QPromiseBase()) {}
 
 	Q_PROPERTY(QPromise promise READ promise);
 
@@ -255,8 +109,6 @@ public:
 	Q_INVOKABLE void resolve(const QVariant& value);
 
 	Q_INVOKABLE void resolve(const QPromise& promise);
-
-	Q_INVOKABLE void reject(const QException& reason);
 };
 
 class Q {
@@ -265,22 +117,23 @@ public:
 
         static QDeferred defer() { return QDeferred(); }
 
-        template <typename T, std::enable_if_t<std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
-        static constexpr auto resolve(T&& v) { return std::forward<T>(v); }
+	template <typename T, std::enable_if_t<std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
+	static constexpr auto resolve(T&& v) {
+		return std::forward<T>(v);
+	}
 
-        template <typename T, std::enable_if_t<!std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
-	static auto resolve(T&& v) { return fulfill(std::forward<T>(v)); }
+	template <typename T, std::enable_if_t<!std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
+	static auto resolve(T&& v) {
+		fulfill(v);
+	}
 
 	template <typename T> static auto fulfill(T&& v) {
-		return QPromise(QFulfilledDescriptor(std::forward<T>(v)), QPromiseBase::ResolvedState);
+		QDeferred d;
+		d.resolve(std::forward<T>(v));
+		return d.promise();
 	}
 
-	template <typename T> static auto reject(T&& v) {
-		return QPromise(QRejectedDescriptor(wrapException(std::forward<T>(v))), QPromiseBase::RejectedState);
-	}
-
-	template <typename T, typename F>
-	static auto when(T&& value, F&& fulfilled) {
+	template <typename T, typename F> static auto when(T&& value, F&& fulfilled) {
 		return resolve(std::forward<T>(value)).then(std::forward<F>(fulfilled));
 	}
 };
