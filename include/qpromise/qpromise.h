@@ -37,6 +37,40 @@ namespace qpromise {
 class QPromise;
 
 class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
+public:
+	//virtual bool resolved() = 0;
+
+	virtual QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled) = 0;
+
+	//virtual void then(const QSharedPointer<QPromiseBase>& promise) = 0;
+
+	//virtual void resolve(const QVariant& value) = 0;
+
+	virtual void resolve(QPromiseBase& promise) = 0;
+};
+
+class QDeferredPromise : public QPromiseBase {
+	QVector<std::function<void(const QVariant&)>> mQueue;
+	QSharedPointer<QPromiseBase> mResolvedPromise;
+
+public:
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+
+	//void resolve(const QVariant& value) override;
+
+	//void resolve(QPromiseBase& promise) override;
+};
+
+class QFulfilledPromise : public QPromiseBase {
+	QVariant mValue;
+
+public:
+	QFulfilledPromise(const QVariant& value);
+
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+};
+
+class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
 	QVector<std::function<void(const QVariant&)>> mQueue;
 
 public:

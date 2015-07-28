@@ -19,16 +19,20 @@
 
 namespace qpromise {
 
-QPromise QPromiseBase::then(const std::function<QVariant(const QVariant&)>& fulfilled) {
+QPromise QDeferredPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled) {
 	auto deferred = Q::defer();
 
 	mQueue.push_back(
-	    [deferred, fulfilled](const QVariant& value) mutable { return deferred.resolve(fulfilled(value)); });
+	    [deferred, fulfilled](const QVariant& value) mutable { deferred.resolve(fulfilled(value)); });
 
 	return deferred.promise();
 }
 
-void QPromiseBase::then(const QSharedPointer<QPromiseBase>& promise) {
+void QPromiseBase::resolve(QPromiseBase& promise) {
+	promise.then(sharedFromThis());
+}
+
+/*void QDeferredPromise::then(const QSharedPointer<QPromiseBase>& promise) {
 	mQueue.push_back([promise](const QVariant& value) mutable { promise->resolve(value); });
 }
 
@@ -36,11 +40,36 @@ void QPromiseBase::resolve(const QVariant& value) {
 	Q::nextTick([this, value]() {
 		for (const auto& f : mQueue) f(value);
 	});
+	}*/
+
+QFulfilledPromise::QFulfilledPromise(const QVariant& value)
+	: mValue(value) {
 }
 
-void QPromiseBase::resolve(const QPromiseBase& promise) { promise.then(sharedFromThis()); }
+QPromise QFulfilledPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled) override {
+	auto deferred = Q::defer();
 
-void QDeferred::resolve(const QVariant& value) { mPromise->resolve(value); }
+	Q::nextTick([thisPtr = sharedFromThis(), deferred, fulfilled]() mutable {
+		deferred.resolve(fulfilled(thisPtr->mValue));
+	});
 
-void QDeferred::resolve(const QPromise& promise) { mPromise->resolve(*(promise.mPromise)); }
+	return deferred.promise();
+}
+
+void QFulfilledPromise::resolve(QPromiseBase& promise) {
+	qWarning("Resolving already resolved promise");
+	return;
+}
+
+void QDeferred::resolve(const QVariant& value) {
+	auto resolvedPromise = QSharedPointer<QFulfilledPromise>::create(value);
+	mPromise->resolve(resolvedPromise);
+	mPromise = resolvedPromise;
+}
+
+void QDeferred::resolve(const QPromise& promise) {
+	mPromise->resolve(promise);
+	mPromise = promise;
+}
+
 }
