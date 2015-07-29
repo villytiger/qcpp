@@ -17,4 +17,9 @@
 
 namespace qpromise {
 
+constexpr auto wrapFulfilled(nullptr_t) noexcept { return propagateValue; }
+
+template <typename F> constexpr auto wrapFulfilled(F&& fulfilled) noexcept { return std::forward<F>(fulfilled); }
+
+template <typename F> QPromise QPromiseBase::then(F&& fulfilled) { return doThen(wrapFulfilled(fulfilled)); }
 }

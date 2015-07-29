@@ -34,53 +34,65 @@
 
 namespace qpromise {
 
+QVariant propagateValue(const QVariant& value);
+
 class QPromise;
 
+class QPromiseException {};
+
 class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
+protected:
+	virtual QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) = 0;
+
 public:
-	//virtual bool resolved() = 0;
+	virtual ~QPromiseBase() = default;
 
-	virtual QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled) = 0;
+	virtual void thenAction(const std::function<void(const QVariant&)>& action) = 0;
 
-	//virtual void then(const QSharedPointer<QPromiseBase>& promise) = 0;
+	virtual void resolve(const QSharedPointer<QPromiseBase>& promise) = 0;
 
-	//virtual void resolve(const QVariant& value) = 0;
-
-	virtual void resolve(QPromiseBase& promise) = 0;
+	template <typename F> QPromise then(F&& fulfilled);
 };
 
 class QDeferredPromise : public QPromiseBase {
 	QVector<std::function<void(const QVariant&)>> mQueue;
 	QSharedPointer<QPromiseBase> mResolvedPromise;
 
+protected:
+	QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+
 public:
-	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+	void thenAction(const std::function<void(const QVariant&)>& action) override;
 
-	//void resolve(const QVariant& value) override;
-
-	//void resolve(QPromiseBase& promise) override;
+	void resolve(const QSharedPointer<QPromiseBase>& promise) override;
 };
 
 class QFulfilledPromise : public QPromiseBase {
 	QVariant mValue;
 
+protected:
+	QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+
 public:
 	QFulfilledPromise(const QVariant& value);
 
-	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+	void thenAction(const std::function<void(const QVariant&)>& action) override;
+
+	void resolve(const QSharedPointer<QPromiseBase>& promise) override;
 };
 
-class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
-	QVector<std::function<void(const QVariant&)>> mQueue;
+class QRejectedPromise : public QPromiseBase {
+	QPromiseException mReason;
+
+protected:
+	QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) override;
 
 public:
-	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled);
+	QRejectedPromise(const QPromiseException& reason);
 
-	void then(const QSharedPointer<QPromiseBase>& promise);
+	void thenAction(const std::function<void(const QVariant&)>& action) override;
 
-	void resolve(const QVariant& value);
-
-	void resolve(QPromiseBase& promise);
+	void resolve(const QSharedPointer<QPromiseBase>& promise) override;
 };
 
 template <typename T> T qvariantCast(const QVariant& v);
@@ -96,6 +108,10 @@ class QPromise {
 	QPromise(const QSharedPointer<QPromiseBase>& promise) : mPromise(promise) {}
 
 public:
+	QPromise(const QVariant& value) : mPromise(new QFulfilledPromise(value)) {}
+
+	QPromise(const QPromiseException& reason) : mPromise(new QRejectedPromise(reason)) {}
+
 	template <typename F = std::nullptr_t, typename E = std::nullptr_t,
 	          std::enable_if_t<
 	              !std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
@@ -134,7 +150,7 @@ class QDeferred {
 	QSharedPointer<QPromiseBase> mPromise;
 
 public:
-	QDeferred() : mPromise(new QPromiseBase()) {}
+	QDeferred() : mPromise(new QDeferredPromise()) {}
 
 	Q_PROPERTY(QPromise promise READ promise);
 
@@ -143,13 +159,15 @@ public:
 	Q_INVOKABLE void resolve(const QVariant& value);
 
 	Q_INVOKABLE void resolve(const QPromise& promise);
+
+	Q_INVOKABLE void reject(const QPromiseException& reason);
 };
 
 class Q {
 public:
 	template <typename F> static void nextTick(F&& f) { QTimer::singleShot(0, f); }
 
-        static QDeferred defer() { return QDeferred(); }
+	static QDeferred defer() { return QDeferred(); }
 
 	template <typename T, std::enable_if_t<std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
 	static constexpr auto resolve(T&& v) {
@@ -162,9 +180,11 @@ public:
 	}
 
 	template <typename T> static auto fulfill(T&& v) {
-		QDeferred d;
-		d.resolve(std::forward<T>(v));
-		return d.promise();
+		return QPromise(std::forward<T>(v));
+	}
+
+	template <typename T> static auto reject(T&& v) {
+		return QPromise(std::forward<T>(v));
 	}
 
 	template <typename T, typename F> static auto when(T&& value, F&& fulfilled) {

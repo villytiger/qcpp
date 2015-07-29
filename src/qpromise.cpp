@@ -19,57 +19,97 @@
 
 namespace qpromise {
 
-QPromise QDeferredPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled) {
-	auto deferred = Q::defer();
+QVariant propagateValue(const QVariant& value) { return value; }
 
-	mQueue.push_back(
-	    [deferred, fulfilled](const QVariant& value) mutable { deferred.resolve(fulfilled(value)); });
+QPromise QDeferredPromise::doThen(const std::function<QVariant(const QVariant&)>& fulfilled) {
+	if (mResolvedPromise) {
+		return mResolvedPromise->then(fulfilled);
+	} else {
+		auto deferred = Q::defer();
 
-	return deferred.promise();
+		mQueue.push_back(
+		    [deferred, fulfilled](const QVariant& value) mutable { deferred.resolve(fulfilled(value)); });
+
+		return deferred.promise();
+	}
 }
 
-void QPromiseBase::resolve(QPromiseBase& promise) {
-	promise.then(sharedFromThis());
+void QDeferredPromise::thenAction(const std::function<void(const QVariant&)>& action) {
+	if (mResolvedPromise) {
+		mResolvedPromise->thenAction(action);
+	} else {
+		mQueue.push_back(action);
+	}
 }
 
-/*void QDeferredPromise::then(const QSharedPointer<QPromiseBase>& promise) {
-	mQueue.push_back([promise](const QVariant& value) mutable { promise->resolve(value); });
-}
+void QDeferredPromise::resolve(const QSharedPointer<QPromiseBase>& promise) {
+	if (mResolvedPromise) {
+		qWarning("Resolving already resolved promise");
+		return;
+	}
+	// TODO: check if promise is this
 
-void QPromiseBase::resolve(const QVariant& value) {
-	Q::nextTick([this, value]() {
-		for (const auto& f : mQueue) f(value);
+	mResolvedPromise = promise;
+	promise->thenAction([thisBase = sharedFromThis()](const QVariant& value) {
+		auto thisPtr = static_cast<QDeferredPromise*>(thisBase.data());
+		for (const auto& f : thisPtr->mQueue) f(value);
 	});
-	}*/
+}
 
 QFulfilledPromise::QFulfilledPromise(const QVariant& value)
 	: mValue(value) {
 }
 
-QPromise QFulfilledPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled) override {
+QPromise QFulfilledPromise::doThen(const std::function<QVariant(const QVariant&)>& fulfilled) {
 	auto deferred = Q::defer();
 
-	Q::nextTick([thisPtr = sharedFromThis(), deferred, fulfilled]() mutable {
+	Q::nextTick([ thisBase = sharedFromThis(), deferred, fulfilled ]() mutable {
+		auto thisPtr = static_cast<QFulfilledPromise*>(thisBase.data());
 		deferred.resolve(fulfilled(thisPtr->mValue));
 	});
 
 	return deferred.promise();
 }
 
-void QFulfilledPromise::resolve(QPromiseBase& promise) {
+void QFulfilledPromise::thenAction(const std::function<void(const QVariant&)>& action) {
+	Q::nextTick([ thisBase = sharedFromThis(), action ]() mutable {
+		auto thisPtr = static_cast<QFulfilledPromise*>(thisBase.data());
+		action(thisPtr->mValue);
+	});
+}
+
+void QFulfilledPromise::resolve(const QSharedPointer<QPromiseBase>&) {
 	qWarning("Resolving already resolved promise");
 	return;
 }
 
-void QDeferred::resolve(const QVariant& value) {
-	auto resolvedPromise = QSharedPointer<QFulfilledPromise>::create(value);
-	mPromise->resolve(resolvedPromise);
-	mPromise = resolvedPromise;
+QRejectedPromise::QRejectedPromise(const QPromiseException& reason) : mReason(reason) {}
+
+QPromise QRejectedPromise::doThen(const std::function<QVariant(const QVariant&)>&) {
+	auto deferred = Q::defer();
+
+	/*Q::nextTick([ thisBase = sharedFromThis(), deferred, fulfilled ]() mutable {
+	        auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
+	        deferred.resolve(fulfilled(thisPtr->mValue));
+	});*/
+
+	return deferred.promise();
 }
 
-void QDeferred::resolve(const QPromise& promise) {
-	mPromise->resolve(promise);
-	mPromise = promise;
+void QRejectedPromise::thenAction(const std::function<void(const QVariant&)>&) {
+
+	/*	Q::nextTick([ thisBase = sharedFromThis(), action ]() mutable {
+	                auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
+	                action(thisPtr->mValue);
+	        });*/
 }
 
+void QRejectedPromise::resolve(const QSharedPointer<QPromiseBase>&) {
+	qWarning("Resolving already resolved promise");
+	return;
+}
+
+void QDeferred::resolve(const QVariant& value) { mPromise->resolve(QSharedPointer<QFulfilledPromise>::create(value)); }
+
+void QDeferred::resolve(const QPromise& promise) { mPromise->resolve(promise.mPromise); }
 }

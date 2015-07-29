@@ -54,9 +54,9 @@ TEST_F(QspecPropagation, ResolutionIsForwardedThroughDeferredPromise) {
         });
 }
 
-/*TEST_F(QspecPropagation, ErrbackRecoversFromException) {
-        std::runtime_error error("some error");
-        Q::reject(error).then(nullptr, [](const QException& e) {
+TEST_F(QspecPropagation, ErrbackRecoversFromException) {
+        QPromiseException reason;
+        Q::reject(reason).then(nullptr, [](const QException& e) {
                 (void)e;
                 //EXPECT_TRUE(typeid(error) == typeid(e));
                 //EXPECT_EQ(error.what(), e.what());
@@ -64,7 +64,7 @@ TEST_F(QspecPropagation, ResolutionIsForwardedThroughDeferredPromise) {
         }).then([](int r) {
                 EXPECT_EQ(10, r);
         });
-}*/
+}
 
 /*TEST(QspecPropagation, RejectionPropagatesThroughThenWithNoErrback) {
         bool t = false;
