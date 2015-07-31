@@ -1,15 +1,14 @@
 import qbs
 
 Project {
-    id: qpromise
-    property path publicIncludePath: qpromise.sourceDirectory + "/include"
+    qbsSearchPaths: ["qbs"]
 
     AutotestRunner {
         arguments: ["--gtest_color=yes"]
     }
 
     references: [
-        "src/qpromise.qbs",
-        "tests/tests.qbs"
+        "src/qpromise.qbs"
+//        "tests/tests.qbs"
     ]
 }
