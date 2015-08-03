@@ -15,9 +15,10 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with qpromise.  If not, see <http://www.gnu.org/licenses/>.
 
-#include <qpromise/qpromise.h>
+#include "qdeferred.h"
+#include "qpromise.h"
 
-namespace qpromise {
+QPROMISE_BEGIN_NAMESPACE
 
 QVariant propagateValue(const QVariant& value) { return value; }
 
@@ -109,7 +110,18 @@ void QRejectedPromise::resolve(const QSharedPointer<QPromiseBase>&) {
 	return;
 }
 
+QDeferred::QDeferred() : mPromise(new QDeferredPromise()) {}
+
+QPromise QDeferred::promise() const { return QPromise(mPromise); }
+
 void QDeferred::resolve(const QVariant& value) { mPromise->resolve(QSharedPointer<QFulfilledPromise>::create(value)); }
 
 void QDeferred::resolve(const QPromise& promise) { mPromise->resolve(promise.mPromise); }
+
+void QDeferred::reject(const QPromiseException& reason) {
+	mPromise->resolve(QSharedPointer<QRejectedPromise>::create(reason));
 }
+
+QDeferred Q::defer() { return QDeferred(); }
+
+QPROMISE_END_NAMESPACE

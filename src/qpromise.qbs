@@ -9,7 +9,12 @@ StaticLibrary {
     Depends { name: "Qt.core" }
     Depends { name: "ExportHeaders" }
 
-    ExportHeaders.headers: [{module: "QPromise", file: "qpromise.h", alias: "QPromise"}]
+    ExportHeaders.headers: [
+        {module: "QPromise", file: "qpromiseglobal.h"},
+        {module: "QPromise", file: "qpromisetraits.h"},
+        {module: "QPromise", file: "qdeferred.h", alias: "QDeferred"},
+        {module: "QPromise", file: "qpromise.h", alias: "QPromise"}
+    ]
 
     cpp.cxxLanguageVersion: "c++14"
     cpp.warningLevel: "all"
@@ -20,6 +25,6 @@ StaticLibrary {
     Export {
         Depends { name: "cpp" }
         Depends { name: "Qt.core" }
-        cpp.includePaths: [project.publicIncludePath]
+        cpp.includePaths: [ExportHeaders.includePath]
     }
 }

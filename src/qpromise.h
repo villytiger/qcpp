@@ -18,7 +18,8 @@
 #ifndef QPROMISE_H
 #define QPROMISE_H
 
-#include "private/traits.h"
+#include "qpromiseglobal.h"
+#include "qpromisetraits.h"
 
 #include <functional>
 #include <type_traits>
@@ -32,10 +33,11 @@
 #include <QVariant>
 #include <QVector>
 
-namespace qpromise {
+QPROMISE_BEGIN_NAMESPACE
 
 QVariant propagateValue(const QVariant& value);
 
+class QDeferred;
 class QPromise;
 
 class QPromiseException {};
@@ -101,7 +103,7 @@ template <> inline int qvariantCast<int>(const QVariant& v) { return v.toInt(); 
 class QPromise {
 	friend class QDeferred;
 
-	template <typename F> struct FulfillTraits: public priv::FunctionTraits<F> {};
+	template <typename F> struct FulfillTraits: public FunctionTraits<F> {};
 
 	QSharedPointer<QPromiseBase> mPromise;
 
@@ -142,32 +144,17 @@ public:
 	}
 };
 
-template <> struct QPromise::FulfillTraits<std::nullptr_t> : public priv::FunctionTraits<QVariant(const QVariant&)> {};
+constexpr auto wrapFulfilled(nullptr_t) noexcept { return propagateValue; }
+template <typename F> constexpr auto wrapFulfilled(F&& fulfilled) noexcept { return std::forward<F>(fulfilled); }
+template <typename F> QPromise QPromiseBase::then(F&& fulfilled) { return doThen(wrapFulfilled(fulfilled)); }
 
-class QDeferred {
-	Q_GADGET
-
-	QSharedPointer<QPromiseBase> mPromise;
-
-public:
-	QDeferred() : mPromise(new QDeferredPromise()) {}
-
-	Q_PROPERTY(QPromise promise READ promise);
-
-	Q_INVOKABLE QPromise promise() const { return QPromise(mPromise); }
-
-	Q_INVOKABLE void resolve(const QVariant& value);
-
-	Q_INVOKABLE void resolve(const QPromise& promise);
-
-	Q_INVOKABLE void reject(const QPromiseException& reason);
-};
+template <> struct QPromise::FulfillTraits<std::nullptr_t> : public FunctionTraits<QVariant(const QVariant&)> {};
 
 class Q {
 public:
 	template <typename F> static void nextTick(F&& f) { QTimer::singleShot(0, f); }
 
-	static QDeferred defer() { return QDeferred(); }
+	static QDeferred defer();
 
 	template <typename T, std::enable_if_t<std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
 	static constexpr auto resolve(T&& v) {
@@ -191,8 +178,7 @@ public:
 		return resolve(std::forward<T>(value)).then(std::forward<F>(fulfilled));
 	}
 };
-}
 
-#include "private/qpromiseimpl.h"
+QPROMISE_END_NAMESPACE
 
 #endif

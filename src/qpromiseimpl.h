@@ -15,25 +15,11 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with qpromise.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "asynctest.h"
+namespace qpromise {
 
-#include <QPromise/QPromise>
+constexpr auto wrapFulfilled(nullptr_t) noexcept { return propagateValue; }
 
-typedef AsyncTest Test;
+template <typename F> constexpr auto wrapFulfilled(F&& fulfilled) noexcept { return std::forward<F>(fulfilled); }
 
-void func(int a);
-
-/*template <typename T = typename FunctionTraits<decltype(func)>::Arg<0>::Type> class A {
-public:
-	void func();
-};*/
-/*
-TEST_F(Test, Test) {
-	Q::fulfill(10).then([](const QVariant& v) { EXPECT_EQ(10, v.toInt()); });
-
-	auto f = [](int) {};
-
-	qpromise::priv::FunctionTraits<decltype(f)>::Arg<0>::Type a;
-	(void)a;
+template <typename F> QPromise QPromiseBase::then(F&& fulfilled) { return doThen(wrapFulfilled(fulfilled)); }
 }
-*/

@@ -17,9 +17,7 @@
 
 #include "asynctest.h"
 
-#include <qpromise/qpromise.h>
-
-using namespace qpromise;
+#include <QPromise/QDeferred>
 
 typedef AsyncTest QspecDeferAndWhen;
 

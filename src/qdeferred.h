@@ -15,25 +15,40 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with qpromise.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "asynctest.h"
+#ifndef QDEFERRED_H
+#define QDEFERRED_H
 
-#include <QPromise/QPromise>
+#include "qpromiseglobal.h"
+#include "qpromise.h"
 
-typedef AsyncTest Test;
+#include <QObject>
+#include <QSharedPointer>
 
-void func(int a);
+QPROMISE_BEGIN_NAMESPACE
 
-/*template <typename T = typename FunctionTraits<decltype(func)>::Arg<0>::Type> class A {
+class QPromise;
+class QPromiseBase;
+class QPromiseException;
+
+class QDeferred {
+	Q_GADGET
+
+	QSharedPointer<QPromiseBase> mPromise;
+
 public:
-	void func();
-};*/
-/*
-TEST_F(Test, Test) {
-	Q::fulfill(10).then([](const QVariant& v) { EXPECT_EQ(10, v.toInt()); });
+	QDeferred();
 
-	auto f = [](int) {};
+	Q_PROPERTY(QPromise promise READ promise);
 
-	qpromise::priv::FunctionTraits<decltype(f)>::Arg<0>::Type a;
-	(void)a;
-}
-*/
+	Q_INVOKABLE QPromise promise() const;
+
+	Q_INVOKABLE void resolve(const QVariant& value);
+
+	Q_INVOKABLE void resolve(const QPromise& promise);
+
+	Q_INVOKABLE void reject(const QPromiseException& reason);
+};
+
+QPROMISE_END_NAMESPACE
+
+#endif

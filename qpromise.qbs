@@ -8,7 +8,7 @@ Project {
     }
 
     references: [
-        "src/qpromise.qbs"
-//        "tests/tests.qbs"
+        "src/qpromise.qbs",
+        "tests/tests.qbs"
     ]
 }

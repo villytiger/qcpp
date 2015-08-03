@@ -3,6 +3,8 @@ import qbs.File
 import qbs.FileInfo
 import qbs.TextFile
 
+import qbs.ModUtils
+
 Module {
     property path includePath: FileInfo.joinPaths(buildDirectory, "include")
     property var headers: [] //: [{module: "QWamp", file: "qwamprawsession.h", alias: "QWampRawsession"}]
@@ -33,7 +35,12 @@ Module {
             var outputs = [];
             var includePath = product.moduleProperty("ExportHeaders", "includePath");
 
-            inputs.forEach(function (h) {
+            inputs.export_hpp.forEach(function (header) {
+                var h = product.moduleProperty("ExportHeaders", "headersMap")[header.fileName];
+                if (!h) {
+                    throw "No header info found for: " + header.filePath;
+                }
+
                 outputs.push({
                     filePath: FileInfo.joinPaths(includePath, h.module, h.file),
                     fileTags: ["hpp"]
@@ -47,26 +54,33 @@ Module {
                 }
             });
 
-            outputs.forEach(function (o) {print(o);});
+            //outputs.forEach(function (o) {ModUtils.dumpObject(o);});
 
             return outputs;
         }
 
         prepare: {
-            throw "stop";
             var cmd = new JavaScriptCommand();
             cmd.description = "creating export header " + input.fileName;
             cmd.highlight = "filegen";
             cmd.sourceCode = function () {
-                var dst = FileInfo.joinPaths(product.buildDirectory, "include/QWamp", input.fileName);
+                var includePath = product.moduleProperty("ExportHeaders", "includePath");
+                var headersMap = product.moduleProperty("ExportHeaders", "headersMap");
+
+                var h = headersMap[input.fileName];
+                if (!h) {
+                    throw "No header info found for: " + header.filePath;
+                }
+
+                var dst = FileInfo.joinPaths(includePath, h.module, input.fileName);
                 File.copy(input.filePath, dst);
 
-                if (!(input.fileName in product.headersMap)) {
+                var h = headersMap[input.fileName];
+                if (!h.alias) {
                     return;
                 }
 
-                var fileName = product.headersMap[input.fileName];
-                var f = new TextFile(FileInfo.joinPaths(product.buildDirectory, "include/QWamp", fileName), TextFile.WriteOnly);
+                var f = new TextFile(FileInfo.joinPaths(includePath, h.module, h.alias), TextFile.WriteOnly);
                 f.writeLine("#include \"" + input.fileName + "\"");
                 f.close();
             }
