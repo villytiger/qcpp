@@ -26,7 +26,10 @@ protected:
 	void done() { mDone = true; }
 
 public:
+	void SetUp() override { mDone = false; }
+
 	void TearDown() override {
-		QCoreApplication::instance()->processEvents();
+		while (!mDone) QCoreApplication::instance()->processEvents();
+		EXPECT_TRUE(mDone);
 	}
 };

@@ -163,7 +163,7 @@ public:
 
 	template <typename T, std::enable_if_t<!std::is_same<QPromise, typename std::decay<T>::type>::value>* = nullptr>
 	static auto resolve(T&& v) {
-		fulfill(v);
+		return fulfill(v);
 	}
 
 	template <typename T> static auto fulfill(T&& v) {

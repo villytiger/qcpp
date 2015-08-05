@@ -15,50 +15,155 @@
 //  You should have received a copy of the GNU Lesser General Public License
 //  along with qpromise.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "asynctest.h"
-
 #include <memory>
+
+#include <QCoreApplication>
+
+#include <gtest/gtest.h>
 
 #include <QPromise/QDeferred>
 
-QVariant dummy("dummy");
-QPromiseException exception;
+namespace AplusplusTests {
 
-class Aplus_2_1_2_1 : public AsyncTest {
+namespace Adapter {
+
+template <typename F> void setTimeout(F&& f, int msec) { QTimer::singleShot(msec, f); }
+
+QVariant value("dummy");
+QPromiseException reason;
+
+typedef const decltype(value)& Value;
+typedef const decltype(reason)& Reason;
+
+QDeferred deferred() noexcept { return QDeferred(); }
+QPromise resolved(const QVariant& v) noexcept { return Q::resolve(v); }
+}
+
+#define TEST_FULFILLED(testCase, testValue, test)                                                                      \
+                                                                                                                       \
+	TEST_F(testCase, AlreadyFulfilled) { this->test(Adapter::resolved(testValue)); }                               \
+                                                                                                                       \
+	TEST_F(testCase, ImmediatelyFulfilled) {                                                                       \
+		auto d = Adapter::deferred();                                                                          \
+		this->test(d.promise());                                                                               \
+		d.resolve(testValue);                                                                                  \
+	}                                                                                                              \
+                                                                                                                       \
+	TEST_F(testCase, EventuallyFulfilled) {                                                                        \
+		auto d = Adapter::deferred();                                                                          \
+		this->test(d.promise());                                                                               \
+		Adapter::setTimeout([d]() mutable { d.resolve(testValue); }, 50);                                      \
+	}
+
+class Test : public testing::Test {
+	bool mDone;
+
 protected:
-	std::shared_ptr<bool> mFulfilledCalled;
+	bool mCalled;
+
+	void done() { mDone = true; }
 
 public:
-	Aplus_2_1_2_1() : mFulfilledCalled(new bool(false)) {}
+	void SetUp() override {
+		mDone = false;
+		mCalled = false;
+	}
 
 	void TearDown() override {
-		AsyncTest::TearDown();
-		EXPECT_TRUE(*mFulfilledCalled);
+		while (!mDone) QCoreApplication::instance()->processEvents();
+		EXPECT_TRUE(mCalled);
 	}
 };
 
+class Aplus_2_1_2_1 : public Test {
+public:
+	void testFulfilled(auto promise) {
+		promise.then([this](Adapter::Value) { mCalled = true; },
+		             [this](Adapter::Reason) {
+			             ASSERT_FALSE(mCalled);
+			             done();
+			     });
+
+		Adapter::setTimeout([this]() { done(); }, 100);
+	}
+};
+
+TEST_FULFILLED(Aplus_2_1_2_1, Adapter::value, testFulfilled);
+
 TEST_F(Aplus_2_1_2_1, TryingToFulfillThenImmediatelyReject) {
-	QDeferred d;
+	auto d = Adapter::deferred();
 
-	d.promise().then([this](const QVariant&) { *mFulfilledCalled = true; },
-	                 [this](const QPromiseException&) { EXPECT_FALSE(*mFulfilledCalled); });
+	d.promise().then([this](Adapter::Value) { mCalled = true; },
+	                 [this](Adapter::Reason) {
+		                 EXPECT_FALSE(mCalled);
+		                 done();
+		         });
 
-	d.resolve(dummy);
-	d.reject(exception);
+	d.resolve(Adapter::value);
+	d.reject(Adapter::reason);
+
+	Adapter::setTimeout([this]() { done(); }, 100);
 }
 
 TEST_F(Aplus_2_1_2_1, TryingToFulfillThenRejectDelayed) {
-	QDeferred d;
+	auto d = Adapter::deferred();
 
-	d.promise().then([this](const QVariant&) { *mFulfilledCalled = true; },
-	                 [this](const QPromiseException&) {
-		                 EXPECT_FALSE(*mFulfilledCalled);
-		                 // done();
+	d.promise().then([this](Adapter::Value) { mCalled = true; },
+	                 [this](Adapter::Reason) {
+		                 EXPECT_FALSE(mCalled);
+		                 done();
 		         });
 
-	Q::nextTick(function() {
-		d.resolve(dummy);
-		d.reject(dummy);
+	Adapter::setTimeout([d]() mutable {
+		d.resolve(Adapter::value);
+		d.reject(Adapter::reason);
 	}, 50);
-	setTimeout(done, 100);
-});
+
+	Adapter::setTimeout([this]() { done(); }, 100);
+}
+
+TEST_F(Aplus_2_1_2_1, TryingToFulfillImmediatelyThenRejectDelayed) {
+	auto d = Adapter::deferred();
+
+	d.promise().then([this](Adapter::Value) { mCalled = true; },
+	                 [this](Adapter::Reason) {
+		                 EXPECT_FALSE(mCalled);
+		                 done();
+		         });
+
+	d.resolve(Adapter::value);
+	Adapter::setTimeout([d]() mutable { d.reject(Adapter::reason); }, 50);
+
+	Adapter::setTimeout([this]() { done(); }, 100);
+}
+
+class Aplus_2_1_3_1 : public Test {
+public:
+	void testFulfilled(auto promise) {
+		promise.then([this](Adapter::Value) { mCalled = true; },
+		             [this](Adapter::Reason) {
+			             ASSERT_FALSE(mCalled);
+			             done();
+			     });
+
+		Adapter::setTimeout([this]() { done(); }, 100);
+	}
+};
+
+TEST_F(Aplus_2_1_3_1, TryingToRejectThenImmediatelyFulfill) {
+	auto d = Adapter::deferred();
+
+	d.promise().then(
+	    [this](Adapter::Value) {
+		    EXPECT_FALSE(mCalled);
+		    done();
+	    },
+	    [this](Adapter::Reason) { mCalled = true; });
+
+	d.reject(Adapter::reason);
+	d.resolve(Adapter::value);
+
+	Adapter::setTimeout([this]() { done(); }, 100);
+}
+
+}

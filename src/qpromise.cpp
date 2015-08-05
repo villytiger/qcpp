@@ -89,10 +89,10 @@ QRejectedPromise::QRejectedPromise(const QPromiseException& reason) : mReason(re
 QPromise QRejectedPromise::doThen(const std::function<QVariant(const QVariant&)>&) {
 	auto deferred = Q::defer();
 
-	/*Q::nextTick([ thisBase = sharedFromThis(), deferred, fulfilled ]() mutable {
+	Q::nextTick([ thisBase = sharedFromThis(), deferred, fulfilled ]() mutable {
 	        auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
-	        deferred.resolve(fulfilled(thisPtr->mValue));
-	});*/
+	        deferred.resolve(rejected(thisPtr->mValue));
+	});
 
 	return deferred.promise();
 }
