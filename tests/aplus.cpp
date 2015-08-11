@@ -37,6 +37,7 @@ typedef const decltype(reason)& Reason;
 
 QDeferred deferred() noexcept { return QDeferred(); }
 QPromise resolved(const QVariant& v) noexcept { return Q::resolve(v); }
+QPromise rejected(const QPromiseException& r) noexcept { return Q::reject(r); }
 }
 
 #define TEST_FULFILLED(testCase, testValue, test)                                                                      \
@@ -53,6 +54,22 @@ QPromise resolved(const QVariant& v) noexcept { return Q::resolve(v); }
 		auto d = Adapter::deferred();                                                                          \
 		this->test(d.promise());                                                                               \
 		Adapter::setTimeout([d]() mutable { d.resolve(testValue); }, 50);                                      \
+	}
+
+#define TEST_REJECTED(testCase, testReason, test)                                                                      \
+                                                                                                                       \
+	TEST_F(testCase, AlreadyRejected) { this->test(Adapter::rejected(testReason)); }                               \
+                                                                                                                       \
+	TEST_F(testCase, ImmediatelyFulfilled) {                                                                       \
+		auto d = Adapter::deferred();                                                                          \
+		this->test(d.promise());                                                                               \
+		d.reject(testReason);                                                                                  \
+	}                                                                                                              \
+                                                                                                                       \
+	TEST_F(testCase, EventuallyRejected) {                                                                         \
+		auto d = Adapter::deferred();                                                                          \
+		this->test(d.promise());                                                                               \
+		Adapter::setTimeout([d]() mutable { d.reject(testReason); }, 50);                                      \
 	}
 
 class Test : public testing::Test {
@@ -139,16 +156,19 @@ TEST_F(Aplus_2_1_2_1, TryingToFulfillImmediatelyThenRejectDelayed) {
 
 class Aplus_2_1_3_1 : public Test {
 public:
-	void testFulfilled(auto promise) {
-		promise.then([this](Adapter::Value) { mCalled = true; },
-		             [this](Adapter::Reason) {
-			             ASSERT_FALSE(mCalled);
-			             done();
-			     });
+	void testRejected(auto promise) {
+		promise.then(
+		    [this](Adapter::Value) {
+			    EXPECT_FALSE(mCalled);
+			    done();
+		    },
+		    [this](Adapter::Reason) { mCalled = true; });
 
 		Adapter::setTimeout([this]() { done(); }, 100);
 	}
 };
+
+TEST_REJECTED(Aplus_2_1_3_1, Adapter::reason, testRejected);
 
 TEST_F(Aplus_2_1_3_1, TryingToRejectThenImmediatelyFulfill) {
 	auto d = Adapter::deferred();
@@ -166,4 +186,54 @@ TEST_F(Aplus_2_1_3_1, TryingToRejectThenImmediatelyFulfill) {
 	Adapter::setTimeout([this]() { done(); }, 100);
 }
 
+TEST_F(Aplus_2_1_3_1, TryingToRejectThenFulfillDelayed) {
+	auto d = Adapter::deferred();
+
+	d.promise().then(
+	    [this](Adapter::Value) {
+		    EXPECT_FALSE(mCalled);
+		    done();
+	    },
+	    [this](Adapter::Reason) { mCalled = true; });
+
+	Adapter::setTimeout([d]() mutable {
+		d.reject(Adapter::reason);
+		d.resolve(Adapter::value);
+	}, 50);
+
+	Adapter::setTimeout([this]() { done(); }, 100);
+}
+
+TEST_F(Aplus_2_1_3_1, TryingToRejectImmediatelyThenFulfillDelayed) {
+	auto d = Adapter::deferred();
+
+	d.promise().then(
+	    [this](Adapter::Value) {
+		    EXPECT_FALSE(mCalled);
+		    done();
+	    },
+	    [this](Adapter::Reason) { mCalled = true; });
+
+	d.reject(Adapter::reason);
+	Adapter::setTimeout([d]() mutable { d.resolve(Adapter::value); }, 50);
+
+	Adapter::setTimeout([this]() { done(); }, 100);
+}
+
+class Aplus_2_2_2_2 : public Test {
+};
+
+TEST_F(Aplus_2_2_2_2, FulfilledAfterADelay) {
+	auto d = Adapter::deferred();
+
+	d.promise().then([this](Adapter::Value) {
+		EXPECT_TRUE(mCalled);
+		done();
+	});
+
+	Adapter::setTimeout([this, d]() mutable {
+		d.resolve(Adapter::value);
+		mCalled = true;
+	}, 50);
+}
 }

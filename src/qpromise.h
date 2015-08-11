@@ -43,12 +43,12 @@ class QPromise;
 class QPromiseException {};
 
 class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
-protected:
+public:
+
+	virtual ~QPromiseBase() = default;
+
 	virtual void doThen(const std::function<void(const QVariant&)>& fulfilled,
 	                    const std::function<void(const QPromiseException&)>& rejected) = 0;
-
-public:
-	virtual ~QPromiseBase() = default;
 
 	virtual QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	                      const std::function<QVariant(const QPromiseException&)>& rejected) = 0;
@@ -59,12 +59,10 @@ public:
 class QDeferredPromise : public QPromiseBase {
 	QVector<QPair<std::function<void(const QVariant&)>, std::function<void(const QPromiseException&)>>> mQueue;
 	QSharedPointer<QPromiseBase> mResolvedPromise;
-
-protected:
+public:
 	void doThen(const std::function<void(const QVariant&)>& fulfilled,
 	            const std::function<void(const QPromiseException&)>& rejected) override;
 
-public:
 	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected) override;
 
@@ -77,8 +75,8 @@ class QFulfilledPromise : public QPromiseBase {
 public:
 	QFulfilledPromise(const QVariant& value);
 
-	void then(const std::function<void(const QVariant&)>& fulfilled,
-	          const std::function<void(const QPromiseException&)>& rejected) override;
+	void doThen(const std::function<void(const QVariant&)>& fulfilled,
+	            const std::function<void(const QPromiseException&)>& rejected) override;
 
 	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected) override;
@@ -92,8 +90,8 @@ class QRejectedPromise : public QPromiseBase {
 public:
 	QRejectedPromise(const QPromiseException& reason);
 
-	void then(const std::function<void(const QVariant&)>& fulfilled,
-	          const std::function<void(const QPromiseException&)>& rejected) override;
+	void doThen(const std::function<void(const QVariant&)>& fulfilled,
+	            const std::function<void(const QPromiseException&)>& rejected) override;
 
 	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected) override;
@@ -118,17 +116,17 @@ public:
 
 	QPromise(const QPromiseException& reason) : mPromise(new QRejectedPromise(reason)) {}
 
-	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled = nullptr,
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
 
-	QPromise then(const std::function<void(const QVariant&)>& fulfilled = nullptr,
+	QPromise then(const std::function<void(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
 
-	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled = nullptr,
-	              const std::function<void(const QPromiseException&)>& rejected = nullptr);
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
+	              const std::function<void(const QPromiseException&)>& rejected);
 
-	QPromise then(const std::function<void(const QVariant&)>& fulfilled = nullptr,
-	              const std::function<void(const QPromiseException&)>& rejected = nullptr);
+	QPromise then(const std::function<void(const QVariant&)>& fulfilled,
+	              const std::function<void(const QPromiseException&)>& rejected);
 
 	/*	template <typename F = std::nullptr_t, typename E = std::nullptr_t,
 	                  std::enable_if_t<

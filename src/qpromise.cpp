@@ -22,10 +22,10 @@ QPROMISE_BEGIN_NAMESPACE
 
 QVariant propagateValue(const QVariant& value) { return value; }
 
-void QDeferredPromise::then(const std::function<void(const QVariant&)>& fulfilled,
-                            const std::function<void(const QPromiseException&)>& rejected) {
+void QDeferredPromise::doThen(const std::function<void(const QVariant&)>& fulfilled,
+                              const std::function<void(const QPromiseException&)>& rejected) {
 	if (mResolvedPromise) {
-		mResolvedPromise->then(fulfilled, rejected);
+		mResolvedPromise->doThen(fulfilled, rejected);
 	} else {
 		mQueue.push_back(qMakePair(fulfilled, rejected));
 	}
@@ -56,7 +56,7 @@ void QDeferredPromise::resolve(const QSharedPointer<QPromiseBase>& promise) {
 	// TODO: check if promise is this
 
 	mResolvedPromise = promise;
-	promise->then(
+	promise->doThen(
 	    [thisBase = sharedFromThis()](const QVariant& value) {
 		    auto thisPtr = static_cast<QDeferredPromise*>(thisBase.data());
 		    for (const auto& p : thisPtr->mQueue) p.first(value);
@@ -69,8 +69,8 @@ void QDeferredPromise::resolve(const QSharedPointer<QPromiseBase>& promise) {
 
 QFulfilledPromise::QFulfilledPromise(const QVariant& value) : mValue(value) {}
 
-void QFulfilledPromise::then(const std::function<void(const QVariant&)>& fulfilled,
-                             const std::function<void(const QPromiseException&)>&) {
+void QFulfilledPromise::doThen(const std::function<void(const QVariant&)>& fulfilled,
+                               const std::function<void(const QPromiseException&)>&) {
 	Q::nextTick([ thisBase = sharedFromThis(), fulfilled ]() mutable {
 		auto thisPtr = static_cast<QFulfilledPromise*>(thisBase.data());
 		fulfilled(thisPtr->mValue);
@@ -96,8 +96,8 @@ void QFulfilledPromise::resolve(const QSharedPointer<QPromiseBase>&) {
 
 QRejectedPromise::QRejectedPromise(const QPromiseException& reason) : mReason(reason) {}
 
-void QRejectedPromise::then(const std::function<void(const QVariant&)>&,
-                            const std::function<void(const QPromiseException&)>& rejected) {
+void QRejectedPromise::doThen(const std::function<void(const QVariant&)>&,
+                              const std::function<void(const QPromiseException&)>& rejected) {
 
 	Q::nextTick([ thisBase = sharedFromThis(), rejected ]() mutable {
 		auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
