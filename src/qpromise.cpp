@@ -22,24 +22,29 @@ QPROMISE_BEGIN_NAMESPACE
 
 QVariant propagateValue(const QVariant& value) { return value; }
 
-QPromise QDeferredPromise::doThen(const std::function<QVariant(const QVariant&)>& fulfilled) {
+void QDeferredPromise::then(const std::function<void(const QVariant&)>& fulfilled,
+                            const std::function<void(const QPromiseException&)>& rejected) {
 	if (mResolvedPromise) {
-		return mResolvedPromise->then(fulfilled);
+		mResolvedPromise->then(fulfilled, rejected);
 	} else {
-		auto deferred = Q::defer();
-
-		mQueue.push_back(
-		    [deferred, fulfilled](const QVariant& value) mutable { deferred.resolve(fulfilled(value)); });
-
-		return deferred.promise();
+		mQueue.push_back(qMakePair(fulfilled, rejected));
 	}
 }
 
-void QDeferredPromise::thenAction(const std::function<void(const QVariant&)>& action) {
+QPromise QDeferredPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled,
+                                const std::function<QVariant(const QPromiseException&)>& rejected) {
 	if (mResolvedPromise) {
-		mResolvedPromise->thenAction(action);
+		return mResolvedPromise->then(fulfilled, rejected);
 	} else {
-		mQueue.push_back(action);
+		auto deferred = Q::defer();
+
+		mQueue.push_back(qMakePair(
+		    [deferred, fulfilled](const QVariant& value) mutable { deferred.resolve(fulfilled(value)); },
+		    [deferred, rejected](const QPromiseException& reason) mutable {
+			    deferred.resolve(rejected(reason));
+		    }));
+
+		return deferred.promise();
 	}
 }
 
@@ -51,17 +56,29 @@ void QDeferredPromise::resolve(const QSharedPointer<QPromiseBase>& promise) {
 	// TODO: check if promise is this
 
 	mResolvedPromise = promise;
-	promise->thenAction([thisBase = sharedFromThis()](const QVariant& value) {
-		auto thisPtr = static_cast<QDeferredPromise*>(thisBase.data());
-		for (const auto& f : thisPtr->mQueue) f(value);
+	promise->then(
+	    [thisBase = sharedFromThis()](const QVariant& value) {
+		    auto thisPtr = static_cast<QDeferredPromise*>(thisBase.data());
+		    for (const auto& p : thisPtr->mQueue) p.first(value);
+	    },
+	    [thisBase = sharedFromThis()](const QPromiseException& reason) {
+		    auto thisPtr = static_cast<QDeferredPromise*>(thisBase.data());
+		    for (const auto& p : thisPtr->mQueue) p.second(reason);
+	    });
+}
+
+QFulfilledPromise::QFulfilledPromise(const QVariant& value) : mValue(value) {}
+
+void QFulfilledPromise::then(const std::function<void(const QVariant&)>& fulfilled,
+                             const std::function<void(const QPromiseException&)>&) {
+	Q::nextTick([ thisBase = sharedFromThis(), fulfilled ]() mutable {
+		auto thisPtr = static_cast<QFulfilledPromise*>(thisBase.data());
+		fulfilled(thisPtr->mValue);
 	});
 }
 
-QFulfilledPromise::QFulfilledPromise(const QVariant& value)
-	: mValue(value) {
-}
-
-QPromise QFulfilledPromise::doThen(const std::function<QVariant(const QVariant&)>& fulfilled) {
+QPromise QFulfilledPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled,
+                                 const std::function<QVariant(const QPromiseException&)>&) {
 	auto deferred = Q::defer();
 
 	Q::nextTick([ thisBase = sharedFromThis(), deferred, fulfilled ]() mutable {
@@ -72,13 +89,6 @@ QPromise QFulfilledPromise::doThen(const std::function<QVariant(const QVariant&)
 	return deferred.promise();
 }
 
-void QFulfilledPromise::thenAction(const std::function<void(const QVariant&)>& action) {
-	Q::nextTick([ thisBase = sharedFromThis(), action ]() mutable {
-		auto thisPtr = static_cast<QFulfilledPromise*>(thisBase.data());
-		action(thisPtr->mValue);
-	});
-}
-
 void QFulfilledPromise::resolve(const QSharedPointer<QPromiseBase>&) {
 	qWarning("Resolving already resolved promise");
 	return;
@@ -86,28 +96,64 @@ void QFulfilledPromise::resolve(const QSharedPointer<QPromiseBase>&) {
 
 QRejectedPromise::QRejectedPromise(const QPromiseException& reason) : mReason(reason) {}
 
-QPromise QRejectedPromise::doThen(const std::function<QVariant(const QVariant&)>&) {
+void QRejectedPromise::then(const std::function<void(const QVariant&)>&,
+                            const std::function<void(const QPromiseException&)>& rejected) {
+
+	Q::nextTick([ thisBase = sharedFromThis(), rejected ]() mutable {
+		auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
+		rejected(thisPtr->mReason);
+	});
+}
+
+QPromise QRejectedPromise::then(const std::function<QVariant(const QVariant&)>&,
+                                const std::function<QVariant(const QPromiseException&)>& rejected) {
 	auto deferred = Q::defer();
 
-	Q::nextTick([ thisBase = sharedFromThis(), deferred, fulfilled ]() mutable {
+	Q::nextTick([ thisBase = sharedFromThis(), deferred, rejected ]() mutable {
 	        auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
-	        deferred.resolve(rejected(thisPtr->mValue));
+	        deferred.resolve(rejected(thisPtr->mReason));
 	});
 
 	return deferred.promise();
 }
 
-void QRejectedPromise::thenAction(const std::function<void(const QVariant&)>&) {
-
-	/*	Q::nextTick([ thisBase = sharedFromThis(), action ]() mutable {
-	                auto thisPtr = static_cast<QRejectedPromise*>(thisBase.data());
-	                action(thisPtr->mValue);
-	        });*/
-}
-
 void QRejectedPromise::resolve(const QSharedPointer<QPromiseBase>&) {
 	qWarning("Resolving already resolved promise");
 	return;
+}
+
+QPromise QPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled,
+                        const std::function<QVariant(const QPromiseException&)>& rejected) {
+	return mPromise->then(fulfilled, rejected);
+}
+
+QPromise QPromise::then(const std::function<void(const QVariant&)>& fulfilled,
+                        const std::function<QVariant(const QPromiseException&)>& rejected) {
+	return mPromise->then([fulfilled](const QVariant& value) {
+		fulfilled(value);
+		return QVariant();
+	}, rejected);
+}
+
+QPromise QPromise::then(const std::function<QVariant(const QVariant&)>& fulfilled,
+                        const std::function<void(const QPromiseException&)>& rejected) {
+	return mPromise->then(fulfilled, [rejected](const QPromiseException& reason) {
+		rejected(reason);
+		return QVariant();
+	});
+}
+
+QPromise QPromise::then(const std::function<void(const QVariant&)>& fulfilled,
+                        const std::function<void(const QPromiseException&)>& rejected) {
+	return mPromise->then(
+	    [fulfilled](const QVariant& value) -> QVariant {
+		    fulfilled(value);
+		    return QVariant();
+	    },
+	    [rejected](const QPromiseException& reason) -> QVariant {
+		    rejected(reason);
+		    return QVariant();
+	    });
 }
 
 QDeferred::QDeferred() : mPromise(new QDeferredPromise()) {}

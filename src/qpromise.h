@@ -44,27 +44,29 @@ class QPromiseException {};
 
 class QPromiseBase : public QEnableSharedFromThis<QPromiseBase> {
 protected:
-	virtual QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) = 0;
+	virtual void doThen(const std::function<void(const QVariant&)>& fulfilled,
+	                    const std::function<void(const QPromiseException&)>& rejected) = 0;
 
 public:
 	virtual ~QPromiseBase() = default;
 
-	virtual void thenAction(const std::function<void(const QVariant&)>& action) = 0;
+	virtual QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
+	                      const std::function<QVariant(const QPromiseException&)>& rejected) = 0;
 
 	virtual void resolve(const QSharedPointer<QPromiseBase>& promise) = 0;
-
-	template <typename F> QPromise then(F&& fulfilled);
 };
 
 class QDeferredPromise : public QPromiseBase {
-	QVector<std::function<void(const QVariant&)>> mQueue;
+	QVector<QPair<std::function<void(const QVariant&)>, std::function<void(const QPromiseException&)>>> mQueue;
 	QSharedPointer<QPromiseBase> mResolvedPromise;
 
 protected:
-	QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) override;
+	void doThen(const std::function<void(const QVariant&)>& fulfilled,
+	            const std::function<void(const QPromiseException&)>& rejected) override;
 
 public:
-	void thenAction(const std::function<void(const QVariant&)>& action) override;
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
+	              const std::function<QVariant(const QPromiseException&)>& rejected) override;
 
 	void resolve(const QSharedPointer<QPromiseBase>& promise) override;
 };
@@ -72,13 +74,14 @@ public:
 class QFulfilledPromise : public QPromiseBase {
 	QVariant mValue;
 
-protected:
-	QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) override;
-
 public:
 	QFulfilledPromise(const QVariant& value);
 
-	void thenAction(const std::function<void(const QVariant&)>& action) override;
+	void then(const std::function<void(const QVariant&)>& fulfilled,
+	          const std::function<void(const QPromiseException&)>& rejected) override;
+
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
+	              const std::function<QVariant(const QPromiseException&)>& rejected) override;
 
 	void resolve(const QSharedPointer<QPromiseBase>& promise) override;
 };
@@ -86,13 +89,14 @@ public:
 class QRejectedPromise : public QPromiseBase {
 	QPromiseException mReason;
 
-protected:
-	QPromise doThen(const std::function<QVariant(const QVariant&)>& fulfilled) override;
-
 public:
 	QRejectedPromise(const QPromiseException& reason);
 
-	void thenAction(const std::function<void(const QVariant&)>& action) override;
+	void then(const std::function<void(const QVariant&)>& fulfilled,
+	          const std::function<void(const QPromiseException&)>& rejected) override;
+
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
+	              const std::function<QVariant(const QPromiseException&)>& rejected) override;
 
 	void resolve(const QSharedPointer<QPromiseBase>& promise) override;
 };
@@ -114,41 +118,58 @@ public:
 
 	QPromise(const QPromiseException& reason) : mPromise(new QRejectedPromise(reason)) {}
 
-	template <typename F = std::nullptr_t, typename E = std::nullptr_t,
-	          std::enable_if_t<
-	              !std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
-	              std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* = nullptr>
-	QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
-		return mPromise->then(std::forward<F>(fulfilled));
-	}
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled = nullptr,
+	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
 
-	template <
-	    typename F, typename E = std::nullptr_t,
-	    std::enable_if_t<
-	        !std::is_same<std::nullptr_t, F>::value && std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
-	        std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* = nullptr>
-	QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
-		return mPromise->then([fulfilled](const QVariant& v) {
-			fulfilled(v);
-			return QVariant();
-		});
-	}
+	QPromise then(const std::function<void(const QVariant&)>& fulfilled = nullptr,
+	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
 
-	template <typename F, typename E = std::nullptr_t,
-	          typename T = std::enable_if_t<
-	              !std::is_same<std::nullptr_t, F>::value &&
-	                  !std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value,
-	              typename FulfillTraits<F>::template Arg<0>::DecayType>>
-	QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
-		return then([fulfilled](const QVariant& v) { return fulfilled(qvariantCast<T>(v)); });
-	}
+	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled = nullptr,
+	              const std::function<void(const QPromiseException&)>& rejected = nullptr);
+
+	QPromise then(const std::function<void(const QVariant&)>& fulfilled = nullptr,
+	              const std::function<void(const QPromiseException&)>& rejected = nullptr);
+
+	/*	template <typename F = std::nullptr_t, typename E = std::nullptr_t,
+	                  std::enable_if_t<
+	                      !std::is_void<typename FulfillTraits<F>::ReturnType>::value &&
+	                      std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* =
+	   nullptr>
+	        QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
+	                return mPromise->then(std::forward<F>(fulfilled));
+	        }
+
+	        template <
+	            typename F, typename E = std::nullptr_t,
+	            std::enable_if_t<
+	                !std::is_same<std::nullptr_t, F>::value && std::is_void<typename
+	   FulfillTraits<F>::ReturnType>::value &&
+	                std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value>* =
+	   nullptr>
+	        QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
+	                return mPromise->then([fulfilled](const QVariant& v) {
+	                        fulfilled(v);
+	                        return QVariant();
+	                });
+	        }
+
+	        template <typename F, typename E = std::nullptr_t,
+	                  typename T = std::enable_if_t<
+	                      !std::is_same<std::nullptr_t, F>::value &&
+	                          !std::is_same<QVariant, typename FulfillTraits<F>::template Arg<0>::DecayType>::value,
+	                      typename FulfillTraits<F>::template Arg<0>::DecayType>>
+	        QPromise then(F&& fulfilled = nullptr, E&& = nullptr) {
+	                return then([fulfilled](const QVariant& v) { return fulfilled(qvariantCast<T>(v)); });
+	        }*/
 };
 
-constexpr auto wrapFulfilled(nullptr_t) noexcept { return propagateValue; }
+/*constexpr auto wrapFulfilled(nullptr_t) noexcept { return propagateValue; }
 template <typename F> constexpr auto wrapFulfilled(F&& fulfilled) noexcept { return std::forward<F>(fulfilled); }
-template <typename F> QPromise QPromiseBase::then(F&& fulfilled) { return doThen(wrapFulfilled(fulfilled)); }
+template <typename F, typename R> QPromise QPromiseBase::then(F&& fulfilled, R&& rejected) {
+        return doThen(wrapFulfilled(fulfilled), rejected);
+}
 
-template <> struct QPromise::FulfillTraits<std::nullptr_t> : public FunctionTraits<QVariant(const QVariant&)> {};
+template <> struct QPromise::FulfillTraits<std::nullptr_t> : public FunctionTraits<QVariant(const QVariant&)> {};*/
 
 class Q {
 public:
