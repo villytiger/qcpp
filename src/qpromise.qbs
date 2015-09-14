@@ -25,6 +25,6 @@ StaticLibrary {
     Export {
         Depends { name: "cpp" }
         Depends { name: "Qt.core" }
-        cpp.includePaths: [ExportHeaders.includePath]
+        cpp.includePaths: [product.ExportHeaders.includePath]
     }
 }

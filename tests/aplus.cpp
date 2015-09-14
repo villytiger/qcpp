@@ -23,6 +23,8 @@
 
 #include <QPromise/QDeferred>
 
+// TODO: copying deferred object in setTimeout
+
 namespace AplusplusTests {
 
 namespace Adapter {
@@ -76,28 +78,26 @@ class Test : public testing::Test {
 	bool mDone;
 
 protected:
-	bool mCalled;
-
 	void done() { mDone = true; }
 
 public:
 	void SetUp() override {
 		mDone = false;
-		mCalled = false;
 	}
 
 	void TearDown() override {
 		while (!mDone) QCoreApplication::instance()->processEvents();
-		EXPECT_TRUE(mCalled);
 	}
 };
 
 class Aplus_2_1_2_1 : public Test {
 public:
 	void testFulfilled(auto promise) {
-		promise.then([this](Adapter::Value) { mCalled = true; },
-		             [this](Adapter::Reason) {
-			             ASSERT_FALSE(mCalled);
+		auto onFulfilledCalled = std::make_shared<bool>(false);
+
+		promise.then([this, onFulfilledCalled](Adapter::Value) { *onFulfilledCalled = true; },
+		             [this, onFulfilledCalled](Adapter::Reason) {
+			             ASSERT_FALSE(*onFulfilledCalled);
 			             done();
 			     });
 
@@ -109,10 +109,11 @@ TEST_FULFILLED(Aplus_2_1_2_1, Adapter::value, testFulfilled);
 
 TEST_F(Aplus_2_1_2_1, TryingToFulfillThenImmediatelyReject) {
 	auto d = Adapter::deferred();
+	auto onFulfilledCalled = std::make_shared<bool>(false);
 
-	d.promise().then([this](Adapter::Value) { mCalled = true; },
-	                 [this](Adapter::Reason) {
-		                 EXPECT_FALSE(mCalled);
+	d.promise().then([this, onFulfilledCalled](Adapter::Value) { *onFulfilledCalled = true; },
+	                 [this, onFulfilledCalled](Adapter::Reason) {
+		                 EXPECT_FALSE(*onFulfilledCalled);
 		                 done();
 		         });
 
@@ -124,10 +125,11 @@ TEST_F(Aplus_2_1_2_1, TryingToFulfillThenImmediatelyReject) {
 
 TEST_F(Aplus_2_1_2_1, TryingToFulfillThenRejectDelayed) {
 	auto d = Adapter::deferred();
+	auto onFulfilledCalled = std::make_shared<bool>(false);
 
-	d.promise().then([this](Adapter::Value) { mCalled = true; },
-	                 [this](Adapter::Reason) {
-		                 EXPECT_FALSE(mCalled);
+	d.promise().then([this, onFulfilledCalled](Adapter::Value) { *onFulfilledCalled = true; },
+	                 [this, onFulfilledCalled](Adapter::Reason) {
+		                 EXPECT_FALSE(*onFulfilledCalled);
 		                 done();
 		         });
 
@@ -141,10 +143,11 @@ TEST_F(Aplus_2_1_2_1, TryingToFulfillThenRejectDelayed) {
 
 TEST_F(Aplus_2_1_2_1, TryingToFulfillImmediatelyThenRejectDelayed) {
 	auto d = Adapter::deferred();
+	auto onFulfilledCalled = std::make_shared<bool>(false);
 
-	d.promise().then([this](Adapter::Value) { mCalled = true; },
-	                 [this](Adapter::Reason) {
-		                 EXPECT_FALSE(mCalled);
+	d.promise().then([this, onFulfilledCalled](Adapter::Value) { *onFulfilledCalled = true; },
+	                 [this, onFulfilledCalled](Adapter::Reason) {
+		                 EXPECT_FALSE(*onFulfilledCalled);
 		                 done();
 		         });
 
@@ -157,12 +160,14 @@ TEST_F(Aplus_2_1_2_1, TryingToFulfillImmediatelyThenRejectDelayed) {
 class Aplus_2_1_3_1 : public Test {
 public:
 	void testRejected(auto promise) {
+		auto onRejectedCalled = std::make_shared<bool>(false);
+
 		promise.then(
-		    [this](Adapter::Value) {
-			    EXPECT_FALSE(mCalled);
+			[this, onRejectedCalled](Adapter::Value) {
+			    EXPECT_FALSE(*onRejectedCalled);
 			    done();
 		    },
-		    [this](Adapter::Reason) { mCalled = true; });
+			[this, onRejectedCalled](Adapter::Reason) { *onRejectedCalled = true; });
 
 		Adapter::setTimeout([this]() { done(); }, 100);
 	}
@@ -172,13 +177,14 @@ TEST_REJECTED(Aplus_2_1_3_1, Adapter::reason, testRejected);
 
 TEST_F(Aplus_2_1_3_1, TryingToRejectThenImmediatelyFulfill) {
 	auto d = Adapter::deferred();
+	auto onRejectedCalled = std::make_shared<bool>(false);
 
 	d.promise().then(
-	    [this](Adapter::Value) {
-		    EXPECT_FALSE(mCalled);
+		[this, onRejectedCalled](Adapter::Value) {
+		    EXPECT_FALSE(*onRejectedCalled);
 		    done();
 	    },
-	    [this](Adapter::Reason) { mCalled = true; });
+		[this, onRejectedCalled](Adapter::Reason) { *onRejectedCalled = true; });
 
 	d.reject(Adapter::reason);
 	d.resolve(Adapter::value);
@@ -188,13 +194,14 @@ TEST_F(Aplus_2_1_3_1, TryingToRejectThenImmediatelyFulfill) {
 
 TEST_F(Aplus_2_1_3_1, TryingToRejectThenFulfillDelayed) {
 	auto d = Adapter::deferred();
+	auto onRejectedCalled = std::make_shared<bool>(false);
 
 	d.promise().then(
-	    [this](Adapter::Value) {
-		    EXPECT_FALSE(mCalled);
+		[this, onRejectedCalled](Adapter::Value) {
+		    EXPECT_FALSE(*onRejectedCalled);
 		    done();
 	    },
-	    [this](Adapter::Reason) { mCalled = true; });
+		[this, onRejectedCalled](Adapter::Reason) { *onRejectedCalled = true; });
 
 	Adapter::setTimeout([d]() mutable {
 		d.reject(Adapter::reason);
@@ -206,13 +213,14 @@ TEST_F(Aplus_2_1_3_1, TryingToRejectThenFulfillDelayed) {
 
 TEST_F(Aplus_2_1_3_1, TryingToRejectImmediatelyThenFulfillDelayed) {
 	auto d = Adapter::deferred();
+	auto onRejectedCalled = std::make_shared<bool>(false);
 
 	d.promise().then(
-	    [this](Adapter::Value) {
-		    EXPECT_FALSE(mCalled);
+		[this, onRejectedCalled](Adapter::Value) {
+		    EXPECT_FALSE(*onRejectedCalled);
 		    done();
 	    },
-	    [this](Adapter::Reason) { mCalled = true; });
+		[this, onRejectedCalled](Adapter::Reason) { *onRejectedCalled = true; });
 
 	d.reject(Adapter::reason);
 	Adapter::setTimeout([d]() mutable { d.resolve(Adapter::value); }, 50);
@@ -225,15 +233,134 @@ class Aplus_2_2_2_2 : public Test {
 
 TEST_F(Aplus_2_2_2_2, FulfilledAfterADelay) {
 	auto d = Adapter::deferred();
+	auto isFulfilled = std::make_shared<bool>(false);
 
-	d.promise().then([this](Adapter::Value) {
-		EXPECT_TRUE(mCalled);
+	d.promise().then([this, isFulfilled](Adapter::Value) {
+		EXPECT_TRUE(*isFulfilled);
 		done();
 	});
 
-	Adapter::setTimeout([this, d]() mutable {
+	Adapter::setTimeout([d, isFulfilled]() mutable {
 		d.resolve(Adapter::value);
-		mCalled = true;
+		*isFulfilled = true;
 	}, 50);
 }
+
+TEST_F(Aplus_2_2_2_2, NeverFulfilled) {
+	auto d = Adapter::deferred();
+	auto isFulfilled = std::make_shared<bool>(false);
+
+	d.promise().then([this, isFulfilled](Adapter::Value) {
+		*isFulfilled = true;
+		done();
+	});
+
+	Adapter::setTimeout([this, isFulfilled]() mutable {
+		EXPECT_FALSE(*isFulfilled);
+		done();
+	}, 150);
+}
+
+class Aplus_2_2_2_3 : public Test {
+};
+
+TEST_F(Aplus_2_2_2_3, AlreadyFulfilled) {
+	auto timesCalled = std::make_shared<int>(0);
+
+	Adapter::resolved(Adapter::value).then([this, timesCalled](Adapter::Value) {
+		EXPECT_EQ(1, ++(*timesCalled));
+		done();
+	});
+}
+
+TEST_F(Aplus_2_2_2_3, TryingToFulfillAPendingPromiseMoreThanOnceImmediately) {
+	auto d = Adapter::deferred();
+	auto timesCalled = std::make_shared<int>(0);
+
+	d.promise().then([this, timesCalled](Adapter::Value) {
+			EXPECT_EQ(1, ++(*timesCalled));
+			done();
+		});
+
+	d.resolve(Adapter::value);
+	d.resolve(Adapter::value);
+}
+
+TEST_F(Aplus_2_2_2_3, TryingToFulfillAPendingPromiseMoreThanOnceDelayed) {
+	auto d = Adapter::deferred();
+	auto timesCalled = std::make_shared<int>(0);
+
+	d.promise().then([this, timesCalled](Adapter::Value) {
+			EXPECT_EQ(1, ++(*timesCalled));
+			done();
+		});
+
+	Adapter::setTimeout([d]() mutable {
+			d.resolve(Adapter::value);
+			d.resolve(Adapter::value);
+		}, 50);
+}
+
+TEST_F(Aplus_2_2_2_3, TryingToFulfillAPendingPromiseMoreThanOnceImmediatelyThenDelayed) {
+	auto d = Adapter::deferred();
+	auto timesCalled = std::make_shared<int>(0);
+
+	d.promise().then([this, timesCalled](Adapter::Value) {
+			EXPECT_EQ(1, ++(*timesCalled));
+			done();
+		});
+
+	d.resolve(Adapter::value);
+	Adapter::setTimeout([d]() mutable {
+			d.resolve(Adapter::value);
+		}, 50);
+}
+
+TEST_F(Aplus_2_2_2_3, WhenMultipleThenCallsAreMadeSpacedApartInTime) {
+	auto d = Adapter::deferred();
+	auto timesCalled = std::shared_ptr<std::array<int, 3>>(new std::array<int, 3>{0, 0, 0});
+
+	d.promise().then([timesCalled](Adapter::Value) {
+			EXPECT_EQ(1, ++((*timesCalled)[0]));
+	});
+
+	Adapter::setTimeout([d, timesCalled]() {
+			d.promise().then([timesCalled](Adapter::Value) {
+					EXPECT_EQ(1, ++((*timesCalled)[1]));
+				});
+		}, 50);
+
+	Adapter::setTimeout([this, d, timesCalled]() {
+			d.promise().then([this, timesCalled](Adapter::Value) {
+					EXPECT_EQ(1, ++((*timesCalled)[2]));
+					done();
+				});
+		}, 100);
+}
+
+/*	specify("when multiple `then` calls are made, spaced apart in time", function (done) {
+            var d = deferred();
+            var timesCalled = [0, 0, 0];
+
+            d.promise.then(function onFulfilled() {
+                assert.strictEqual(++timesCalled[0], 1);
+            });
+
+            setTimeout(function () {
+                d.promise.then(function onFulfilled() {
+                    assert.strictEqual(++timesCalled[1], 1);
+                });
+            }, 50);
+
+            setTimeout(function () {
+                d.promise.then(function onFulfilled() {
+                    assert.strictEqual(++timesCalled[2], 1);
+                    done();
+                });
+            }, 100);
+
+            setTimeout(function () {
+                d.resolve(dummy);
+            }, 150);
+	    });*/
 }
