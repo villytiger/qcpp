@@ -8,6 +8,7 @@ Project {
     }
 
     references: [
+        "googletest/googletest.qbs",
         "src/qpromise.qbs",
         "tests/tests.qbs"
     ]

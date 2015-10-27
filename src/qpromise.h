@@ -119,14 +119,18 @@ public:
 	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
 
-	QPromise then(const std::function<void(const QVariant&)>& fulfilled,
+/*	QPromise then(const std::function<void(const QVariant&)>& fulfilled,
 	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
 
 	QPromise then(const std::function<QVariant(const QVariant&)>& fulfilled,
 	              const std::function<void(const QPromiseException&)>& rejected);
 
 	QPromise then(const std::function<void(const QVariant&)>& fulfilled,
-	              const std::function<void(const QPromiseException&)>& rejected);
+	const std::function<void(const QPromiseException&)>& rejected);*/
+
+	QPromise then(const std::function<QPromise(const QVariant&)>& fulfilled,
+	              const std::function<QVariant(const QPromiseException&)>& rejected = nullptr);
+
 
 	/*	template <typename F = std::nullptr_t, typename E = std::nullptr_t,
 	                  std::enable_if_t<

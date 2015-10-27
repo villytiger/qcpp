@@ -127,7 +127,7 @@ QPromise QPromise::then(const std::function<QVariant(const QVariant&)>& fulfille
 	return mPromise->then(fulfilled, rejected);
 }
 
-QPromise QPromise::then(const std::function<void(const QVariant&)>& fulfilled,
+/*QPromise QPromise::then(const std::function<void(const QVariant&)>& fulfilled,
                         const std::function<QVariant(const QPromiseException&)>& rejected) {
 	return mPromise->then([fulfilled](const QVariant& value) {
 		fulfilled(value);
@@ -154,7 +154,7 @@ QPromise QPromise::then(const std::function<void(const QVariant&)>& fulfilled,
 		    rejected(reason);
 		    return QVariant();
 	    });
-}
+	    }*/
 
 QDeferred::QDeferred() : mPromise(new QDeferredPromise()) {}
 
